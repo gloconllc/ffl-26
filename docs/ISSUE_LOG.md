@@ -1,5 +1,24 @@
 # ISSUE_LOG.md — problems hit, decisions made to resolve them, and why
 
+## 2026-08-03 — Vercel deploy failed: "No Output Directory named 'public' found"
+
+**Issue:** User tried deploying (via Vercel's dashboard/GitHub integration) and hit:
+"No Output Directory named 'public' found after the Build completed."
+
+**Why this happened:** `package.json` had a `"build"` script (`tsc --noEmit -p
+api/tsconfig.json`) left over from earlier type-checking. Vercel auto-detects any
+`build` script as its Build Command; `tsc --noEmit` deliberately emits nothing, so
+after "running the build," Vercel looked for an output directory (defaulting to
+`public` since a build step existed) and found nothing there — we don't have a
+`public` folder at all (renamed to `draft-app/`/`season-app/`/`shared/` earlier).
+
+**Resolution:** Renamed the script to `"typecheck"` (still runs the same command, just
+never auto-invoked by Vercel as a build step) and added `"framework": null` to
+`vercel.json` to make the zero-config static + serverless-functions intent explicit.
+This is a static site with API functions, not a framework project — it should never
+have a "build" step or an expected output directory at all. Verified `npm run
+typecheck` and `npm run selftest` both still work after the rename.
+
 ## 2026-08-03 — Cloud sandbox has no GitHub push credentials
 
 **Issue:** First real commit made locally (`ea4df40`), but `git push -u origin main`

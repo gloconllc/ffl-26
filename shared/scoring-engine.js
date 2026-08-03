@@ -12,12 +12,56 @@
 // - Weights are adjustable (settings sliders), defaults below are the base weights
 //   from the original spec.
 
+import { computeReplacementLevels, computeVORP } from "./replacement-value.js";
+import { computeTiers, remainingInTier } from "./tiering.js";
+
 export const DEFAULT_TIER_WEIGHTS = {
   projections: 0.4,
   efficiency: 0.3,
   contextual: 0.2,
   risk: 0.1,
 };
+
+/**
+ * Tier 1 — Projections. REAL, not stubbed: VORP + tier-cliff awareness, both unit
+ * tested (see engine.selftest.mjs). Still missing from the original spec's Tier 1
+ * factors: Vegas-implied team totals and ADP-vs-current-pick delta — both need a live
+ * data source we haven't wired in yet (The Odds API needs the user's key; ADP needs a
+ * free source, not FantasyPros per docs/ISSUE_LOG.md). Scoped honestly as "VORP +
+ * tiering only" until those land.
+ *
+ * @param {{position: string, projectedPoints: number, providerPlayerId: string}} player
+ * @param {Array} allPlayersAtPosition - full pool for that position, for tiering/VORP
+ * @param {{numTeams: number, startersPerTeamByPosition: Record<string, number>}} leagueSettings
+ * @returns {{score: number, vorp: number, tier: number, remainingInTier: number, reasoning: string[]}}
+ */
+export function scoreProjectionsTier(player, allPlayersAtPosition, leagueSettings) {
+  const replacementLevels = computeReplacementLevels(allPlayersAtPosition, leagueSettings);
+  const vorp = computeVORP(player, replacementLevels);
+  const tiers = computeTiers(allPlayersAtPosition.filter((p) => p.position === player.position));
+  const tierEntry = tiers.find((t) =>
+    t.players.some((p) => p.providerPlayerId === player.providerPlayerId)
+  );
+  const cliffRemaining = remainingInTier(tiers, player.providerPlayerId);
+
+  const reasoning = [
+    `${vorp >= 0 ? "+" : ""}${vorp.toFixed(1)} points over replacement at ${player.position}`,
+    tierEntry ? `Tier ${tierEntry.tier} at ${player.position}` : "Tier unavailable",
+  ];
+  if (cliffRemaining !== null && cliffRemaining <= 1) {
+    reasoning.push(
+      `Only ${cliffRemaining} other player(s) left in this tier — a run here empties it fast.`
+    );
+  }
+
+  return {
+    score: vorp, // raw VORP for now; normalizing across positions comes once efficiency/contextual/risk tiers exist to combine against
+    vorp,
+    tier: tierEntry?.tier ?? null,
+    remainingInTier: cliffRemaining,
+    reasoning,
+  };
+}
 
 /**
  * @param {CanonicalPlayer} player
@@ -27,11 +71,16 @@ export const DEFAULT_TIER_WEIGHTS = {
  * @returns {Promise<{score: number, tierBreakdown: object, reasoning: string[], riskFlags: string[]}>}
  */
 export async function scorePlayer(player, context, weights = DEFAULT_TIER_WEIGHTS) {
-  // TODO: implement. Run the four tier scorers concurrently:
+  // TODO: efficiency/contextual/risk tiers are still stubbed — projections tier
+  // (scoreProjectionsTier, above) is real. Once the other three exist, run all four
+  // concurrently:
   //   const [projections, efficiency, contextual, risk] = await Promise.all([...])
   // then combine with `weights`, and always return a human-readable `reasoning` array
   // — never just a bare number. See docs/CONTEXT.md for the exact factors per tier.
-  throw new Error("scorePlayer() is not implemented yet — see shared/scoring-engine.js");
+  throw new Error(
+    "scorePlayer() combines all 4 tiers and is not implemented yet — " +
+      "scoreProjectionsTier() above IS implemented if you just need that one."
+  );
 }
 
 /**

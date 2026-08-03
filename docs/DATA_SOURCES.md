@@ -13,6 +13,19 @@ documented.
   `/api` serverless proxy, never directly from client-side JS.
 - League ID: 865803 (see CONTEXT.md)
 
+## IMPORTANT: this cloud sandbox cannot live-test most of these sources
+Discovered 2026-08-03: this Claude session's Bash tool routes outbound traffic through
+an allowlisted proxy (npm/pypi/github/anthropic domains only) — direct `curl` to
+`fantasy.espn.com`/`lm-api-reads.fantasy.espn.com` gets a 403 from the *proxy itself*
+(confirmed via `curl -v`, not an ESPN-side rejection). The same restriction almost
+certainly applies to Kalshi, The Odds API, Open-Meteo, and Yahoo's endpoints. Practical
+effect: real connectivity testing for these has to happen either (a) via `vercel dev` /
+a real browser on the user's own machine, which has normal internet access, or (b)
+after deploying to Vercel, where serverless functions run with unrestricted egress.
+Don't report "verified" for any of these from inside this sandbox — only "implemented,
+type-checks, logic unit-tested with synthetic data where possible" until it's actually
+been run somewhere with real network access.
+
 ## ESPN Fantasy Football (private league)
 - Base (current, per community libraries as of 2026-08-03):
   `https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/{year}/segments/0/leagues/{leagueId}`

@@ -2,6 +2,7 @@ import * as yahooAuth from "../shared/yahoo-auth.js";
 import { getEspnLeague } from "../shared/espn-client.js";
 import { saveJSON, loadJSON } from "../shared/storage.js";
 import { LEAGUES } from "../shared/data-sources.js";
+import { YAHOO_CLIENT_ID } from "../shared/config.js";
 
 // --- Theme toggle -----------------------------------------------------------
 const THEME_KEY = "theme";
@@ -48,13 +49,6 @@ function setYahooStatus(text, cls) {
 }
 
 async function initYahoo() {
-  // NOTE: YAHOO_CLIENT_ID needs to be reachable client-side to build the auth URL.
-  // It's not a secret for a PKCE public client, but it still shouldn't be hand-typed
-  // into this file — TODO once we have a build step: inject it at build time from
-  // the Vercel project's env vars (same value as .env.local's YAHOO_CLIENT_ID).
-  // Hardcoding a placeholder for now so this file runs without a build step.
-  const YAHOO_CLIENT_ID = window.__YAHOO_CLIENT_ID__ || null;
-
   const tokens = await yahooAuth.handleRedirectCallback().catch((err) => {
     logDebug("Yahoo redirect callback error", String(err));
     return null;

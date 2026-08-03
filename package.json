@@ -5,7 +5,8 @@
   "description": "Personal Fantasy Football Intelligence Platform (Yahoo + ESPN) — draft app (Phase 1) and season app (Phase 2).",
   "scripts": {
     "dev": "vercel dev",
-    "build": "tsc --noEmit -p api/tsconfig.json"
+    "typecheck": "tsc --noEmit -p api/tsconfig.json",
+    "selftest": "node shared/engine.selftest.mjs"
   },
   "devDependencies": {
     "@vercel/node": "^3.2.24",

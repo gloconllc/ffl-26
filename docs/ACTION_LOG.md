@@ -2,6 +2,28 @@
 
 Newest entries at the top. One entry per meaningful action, not per keystroke.
 
+## 2026-08-03 (session 2, "brain" work + gap closing)
+- Closed the Yahoo Client ID gap: added `shared/config.js` (non-secret, safe in client
+  code per the Public Client/PKCE model) and wired it into `draft-app/app.js`, removing
+  the dead `window.__YAHOO_CLIENT_ID__` reference that nothing ever set.
+- Tried to live-verify the ESPN endpoint host with the real league credentials —
+  discovered this sandbox's Bash tool only has allowlisted network egress (npm/pypi/
+  github/anthropic), so ESPN (and almost certainly Kalshi/Odds API/Open-Meteo/Yahoo)
+  can't be reached from here at all — confirmed it's the sandbox's own proxy returning
+  403, not ESPN. Logged in docs/DATA_SOURCES.md. Real verification needs to happen via
+  the user's own machine (`vercel dev`) or after a real Vercel deploy.
+- Real "brain" progress, not just plumbing (per user's explicit priority): wrote
+  `shared/replacement-value.js` (VORP) and `shared/tiering.js` (tier-cliff detection),
+  both pure functions with no I/O so they're testable without live data. Wrote
+  `shared/engine.selftest.mjs` with synthetic data and ran it — all assertions passed
+  (`node shared/engine.selftest.mjs`). Wired the result into
+  `shared/scoring-engine.js` as `scoreProjectionsTier()` — this one function is now
+  real, not stubbed. `scorePlayer()` (all 4 tiers combined) is still stubbed pending
+  the other three tiers.
+- Added `shared/package.json` (`{"type": "module"}`) scoped to just that folder so the
+  self-test runs clean without a Node module-type warning, without touching the root
+  package.json (which needs to stay CommonJS-compatible for the `/api` TS functions).
+
 ## 2026-08-03 (session 2 cont'd)
 - User provided a GitHub PAT. Pushed all 4 pending commits to `origin/main`
   (`f15f005..9651654`) using the token inline on the push URL for a single command —
