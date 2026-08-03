@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vercel dev",
     "typecheck": "tsc --noEmit -p api/tsconfig.json",
-    "selftest": "node shared/engine.selftest.mjs && node shared/draft-flow.selftest.mjs"
+    "selftest": "node shared/engine.selftest.mjs && node shared/draft-flow.selftest.mjs && node shared/scoring-engine.selftest.mjs",
+    "build:data": "node scripts/build-player-data.mjs"
   },
   "devDependencies": {
     "@vercel/node": "^3.2.24",

@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/draft-app/styles.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 </head>
 <body>
   <header class="app-header">
@@ -53,7 +54,7 @@
 
     <section id="panel-board" class="panel">
       <h2>Draft Board</h2>
-      <p class="placeholder-banner">⚠ Player pool is PLACEHOLDER data (<code>shared/data/placeholder-players.json</code>) — realistic names, made-up projections/ADP. Swap for a real feed before an actual draft. See docs/DATA_SOURCES.md.</p>
+      <p id="data-source-banner" class="placeholder-banner">Loading player data…</p>
 
       <div id="setup-card" class="card">
         <h3>Start a Draft</h3>
@@ -91,7 +92,7 @@
 
     <section id="panel-recommend" class="panel">
       <h2>Recommendation</h2>
-      <p class="hint">Real VORP + tier-cliff scoring (<code>shared/scoring-engine.js</code>'s <code>scoreProjectionsTier()</code>). Efficiency/Contextual/Risk tiers are still stubbed — see settings sliders below.</p>
+      <p class="hint">All four tiers are real now, backed by real nflverse data — Projections (VORP + tier-cliff), Efficiency (EPA/yards-per-touch/volume percentile), Contextual (Week 1 2026 schedule/odds), and Risk (injury history). Adjust their relative weight in Settings below — it genuinely changes the ranking now.</p>
 
       <div class="card" id="strategy-quickpick">
         <h3>Strategy for this pick</h3>
@@ -123,8 +124,13 @@
           <option value="DEF">DEF</option>
         </select>
       </div>
+      <div class="card">
+        <h3>Top scores at this position</h3>
+        <div class="chart-wrap"><canvas id="available-chart" height="90"></canvas></div>
+      </div>
+
       <table class="data-table" id="available-table">
-        <thead><tr><th>Player</th><th>Pos</th><th>Team</th><th>Tier</th><th>VORP</th><th></th></tr></thead>
+        <thead><tr><th>Player</th><th>Pos</th><th>Team</th><th>Tier</th><th>VORP</th><th>Score</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
     </section>
@@ -194,7 +200,7 @@
           <label for="weight-risk">Risk weight</label>
           <input id="weight-risk" type="range" min="0" max="100" value="10" />
         </div>
-        <p class="hint">Sliders persist to storage, but with only the Projections tier implemented, scaling its own weight can't change ranking order yet (multiplying every score by the same number doesn't reorder them) — relative weighting only matters once a second tier exists to weigh against it. They'll start visibly affecting recommendations as Efficiency/Contextual/Risk land (see <code>shared/scoring-engine.js</code>).</p>
+        <p class="hint">All four tiers are real and combined into each player's Score (0-100) by these weights — turning Risk all the way up and everything else down, for example, ranks purely by health/durability. Contextual is currently Week 1 2026 schedule/odds only (not yet full-season weather/coaching/matchup intelligence — see <code>docs/CONTEXT.md</code>). Sliders persist to storage automatically.</p>
       </div>
     </section>
   </main>

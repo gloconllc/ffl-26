@@ -196,6 +196,34 @@ confirm or override, and if overridden, recompute forward without punishing the
 choice. Pre-seeded with the Lamar Jackson preference above. See ACTION_LOG.md for
 the actual files.
 
+## Real player data + real Efficiency/Risk/Contextual scoring — 2026-08-03
+The app ran entirely on synthetic `placeholder-players.json` until this pass. The user
+said directly: "I don't see anything there, there should be data there since the brain
+should be running fetches and scraping sites — implement it." Resolution:
+`scripts/build-player-data.mjs` pulls real, free, public nflverse-data (see
+DATA_SOURCES.md for exact endpoints/caveats) and builds `shared/data/players-live.json`
+(807 real players after filtering) + `shared/data/team-context-2026.json` (real 2026
+schedule/odds/coaches). `draft-app/app.js`'s `loadPlayers()` now fetches the real file
+first, falling back to the placeholder only if that fetch fails (with a visible banner
+either way, never silent).
+
+This also finally implemented the Efficiency, Risk, and a first-pass Contextual
+scoring tier in `shared/scoring-engine.js` (`scoreEfficiencyTier`, `scoreRiskTier`,
+`scoreContextualTier`), and rewrote `scorePlayer()` to actually combine all four tiers
+(percentile-normalized 0-100 each, so they combine meaningfully regardless of each
+tier's native scale) — this is what makes the Settings tier-weight sliders do
+something real for the first time; previously scaling the one implemented tier's own
+weight couldn't reorder anything. Verified against real data in
+`shared/scoring-engine.selftest.mjs` (part of `npm run selftest` now), and visually
+verified via a headless-browser screenshot pass (Draft/Recommendation/Roster/Settings
+tabs all render correctly with real data, tier bars, and roster-needs progress bars).
+
+**Known limitations, stated honestly (see DATA_SOURCES.md for the full list):** no
+free 2026 projections exist yet, so `projectedPoints` is a 2024-actuals-based estimate,
+not an official projection. Kicker scoring is currently unusable (the data source
+doesn't cover FG/XP stats). Contextual currently only reflects Week 1 2026
+schedule/odds, not the full weather/coaching/matchup picture still queued.
+
 ## Kalshi badge — designed, NOT yet coded (correcting a stale note — 2026-08-03)
 An earlier note in this file claimed `shared/kalshi-client.js` already existed; it does
 not (verified by directory listing 2026-08-03) — correcting that here so a future

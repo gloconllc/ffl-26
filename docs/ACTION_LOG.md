@@ -2,6 +2,82 @@
 
 Newest entries at the top. One entry per meaningful action, not per keystroke.
 
+## 2026-08-03 (session 4 — real data pipeline, real Efficiency/Risk/Contextual tiers, visual redesign, visualizations)
+User's ask: "the look and feel isn't working for me, add in any recommendations you
+have for apps like this and remember the visualizations? I don't see anything [real]
+there, there should be data there since the brain should be running fetches and
+scraping sites — implement." Clarified priorities via AskUserQuestion: do all three
+(redesign, visualizations, real data) together; blend ESPN/Sleeper/DraftKings/
+Bloomberg-terminal as design references; build real data now, verify after deploy.
+
+- **Real data pipeline (the core ask).** Discovered empirically that this sandbox
+  CAN reach `github.com`/`raw.githubusercontent.com` (including release-asset
+  downloads), unlike Yahoo/ESPN/Sleeper/Open-Meteo/Kalshi. Built
+  `scripts/build-player-data.mjs` pulling free, public, official nflverse-data:
+  player identity crosswalk, 2024-season per-player stats (nflverse's own
+  `fantasy_points_ppr` column, not re-derived), team defense stats, official injury
+  reports, and the real 2026 schedule (including already-posted Week 1
+  moneylines/spreads/totals and real head coach names). Output:
+  `shared/data/players-live.json` (807 real players after filtering out stale/retired
+  crosswalk entries and zero-snap deep bench players) and
+  `shared/data/team-context-2026.json`. Both carry honest `_README` provenance —
+  `projectedPoints` is explicitly labeled a 2024-actuals-based estimate, not an
+  official 2026 projection (none exists yet from a free source). Hit and fixed two
+  real bugs along the way: (1) `player_stats.csv` only covers seasons through 2024,
+  not 2025 as initially assumed — verified empirically rather than guessed; (2) the
+  crosswalk's `status: ACT` is occasionally stale on long-retired players (e.g. Troy
+  Aikman) — fixed by also filtering on `last_season`.
+- `draft-app/app.js`'s `loadPlayers()` now fetches the real file first, with a visible
+  status banner (green "real data loaded, N players" vs. amber "placeholder, real
+  data failed — see debug output") — never silently substitutes one for the other.
+- **Efficiency, Risk, and a first Contextual tier are now real**, not stubbed:
+  `shared/scoring-engine.js` gained `scoreEfficiencyTier()` (EPA/yards-per-touch/
+  target-volume, percentiled within position), `scoreRiskTier()` (injury designation
+  + games-played durability), `scoreContextualTier()` (Week 1 2026 schedule/odds —
+  favored team + high game total nudges score up). `scorePlayer()` now genuinely
+  combines all four tiers (each percentile-normalized 0-100 within position, so they
+  combine meaningfully) — this is what makes the Settings tier-weight sliders
+  finally do something real; previously scaling the one implemented tier's own
+  weight couldn't reorder anything. `draft-app/app.js`'s `scoredAvailable()` now
+  calls the full `scorePlayer()` instead of just `scoreProjectionsTier()`. Added
+  `shared/scoring-engine.selftest.mjs` (now part of `npm run selftest`), testing
+  against the real data set, not synthetic fixtures.
+- **Visual redesign**, blending the four requested references: refined the existing
+  dark navy/green design system (Bloomberg-terminal density/darkness) with Sleeper-
+  style real player headshot avatars (from nflverse's headshot URLs, graceful
+  fallback to a position-letter placeholder on load failure), position-color-coded
+  badges (QB purple/RB green/WR blue/TE amber/K gray/DEF red — Sleeper-style quick
+  scannability), DraftKings-style small pill badges for injury status and bye week,
+  and tightened data-table density with tabular-numeral monospace for numeric
+  columns (VORP/Score) — ESPN-style dense stat tables.
+- **Visualizations added**: (1) a lightweight, dependency-free 4-bar "tier breakdown"
+  visualization on each recommendation card (Projections/Efficiency/Contextual/Risk,
+  color-coded, 0-100); (2) roster-needs progress bars on My Roster (replacing plain
+  text); (3) a real Chart.js (via cdnjs, per this project's CDN policy) horizontal
+  bar chart of the top 10 available players' blended scores, position-color-coded,
+  on the Available Players section — degrades gracefully (no crash, just doesn't
+  render) if the CDN is unreachable.
+- **Verified visually**, not just by reading code: served the app locally
+  (`python3 -m http.server`) and used Playwright (pre-installed in this environment)
+  to screenshot Connect/Draft/Recommendation/Roster/Settings after a full practice
+  draft flow, checking for console errors. Confirmed: real player data loads (807
+  players), tier bars/position colors/injury badges/roster progress bars all render
+  correctly, the preference layer correctly shows "your stated preference for Lamar
+  Jackson already IS the model's #1 pick." Player headshot images and the Chart.js
+  CDN both fail to load *from this sandbox* (its own network allowlist, not a real
+  bug) but degrade gracefully with no console errors — will render normally from a
+  real browser on Vercel/the user's machine.
+- Corrected two now-stale UI hint strings in `draft-app.html` that still said
+  "Efficiency/Contextual/Risk tiers are still stubbed" / sliders "can't change
+  ranking order yet" — both are now false and were updated to describe the real
+  4-tier behavior.
+- Updated `docs/DATA_SOURCES.md` with the exact nflverse endpoints used, what's
+  confirmed reachable from this sandbox (github.com/raw.githubusercontent.com — not
+  previously known) and what still isn't, and the honest list of current data gaps
+  (no real 2026 projections source, kicker scoring unusable, DEF scoring simplified).
+- Added `npm run build:data` script to re-run the ETL (this IS the Phase 2
+  "daily/on-demand refresh" mechanism from CONTEXT.md, manual for now).
+
 ## 2026-08-03 (session 3 — unified-app pivot + Strategy preset selector)
 - **Architecture pivot, directly from the user:** "the draft is just a piece of the
   overall app... draft, season lineup optimizer, trade optimizer, free agent

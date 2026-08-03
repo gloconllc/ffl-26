@@ -11,12 +11,13 @@ import {
   currentPickNumber,
   teamSlotForPick,
   getAvailablePlayers,
+  getRosterForSlot,
   getMyRoster,
   getRosterNeeds,
   recordPick,
 } from "../shared/draft-state.js";
 import { pickForOpponent, simulateUntilMyTurn } from "../shared/mock-draft.js";
-import { scoreProjectionsTier, DEFAULT_TIER_WEIGHTS } from "../shared/scoring-engine.js";
+import { scorePlayer, DEFAULT_TIER_WEIGHTS } from "../shared/scoring-engine.js";
 import { getPreferences, findMatchingPreference } from "../shared/preferences.js";
 import { applyPreferenceLayer, acknowledgeOverride } from "../shared/preference-engine.js";
 
@@ -160,15 +161,62 @@ async function checkEspn() {
   }
 }
 
-// --- Placeholder player data --------------------------------------------------
+// --- Player data: real nflverse-sourced data, placeholder as a last-resort fallback -
+// See scripts/build-player-data.mjs for exactly how shared/data/players-live.json is
+// built and its own _README for the honest caveats (2024-actuals-based projection
+// proxy, not an official 2026 projection — no free source for that exists yet).
 let cachedPlayers = null;
+let cachedTeamContext = null;
+let usingPlaceholderData = false;
+
 async function loadPlayers() {
   if (cachedPlayers) return cachedPlayers;
-  const res = await fetch("/shared/data/placeholder-players.json");
-  if (!res.ok) throw new Error(`Failed to load placeholder player data (${res.status})`);
-  const data = await res.json();
-  cachedPlayers = data.players;
-  return cachedPlayers;
+  try {
+    const res = await fetch("/shared/data/players-live.json");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    cachedPlayers = data.players;
+    usingPlaceholderData = false;
+    return cachedPlayers;
+  } catch (err) {
+    logDebug("Falling back to placeholder player data", String(err));
+    const res = await fetch("/shared/data/placeholder-players.json");
+    if (!res.ok) throw new Error(`Failed to load placeholder player data (${res.status})`);
+    const data = await res.json();
+    cachedPlayers = data.players;
+    usingPlaceholderData = true;
+    return cachedPlayers;
+  }
+}
+
+function updateDataSourceBanner() {
+  const el = document.getElementById("data-source-banner");
+  if (!el) return;
+  if (usingPlaceholderData) {
+    el.textContent =
+      "⚠ Player pool is PLACEHOLDER data (shared/data/placeholder-players.json) — real data failed to load, see debug output. Made-up projections/ADP, do not use for an actual draft.";
+    el.className = "placeholder-banner";
+  } else {
+    const count = cachedPlayers ? cachedPlayers.length : 0;
+    el.textContent =
+      `✓ Real player data loaded — ${count} players from nflverse (see shared/data/players-live.json's own README). ` +
+      `Projections are a 2024-actuals-based estimate, not an official 2026 projection — no free source for that exists yet.`;
+    el.className = "data-source-ok";
+  }
+}
+
+async function loadTeamContext() {
+  if (cachedTeamContext) return cachedTeamContext;
+  try {
+    const res = await fetch("/shared/data/team-context-2026.json");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    cachedTeamContext = data.teams;
+  } catch (err) {
+    logDebug("Team context (schedule/odds) unavailable", String(err));
+    cachedTeamContext = {};
+  }
+  return cachedTeamContext;
 }
 
 // --- Weights (settings) --------------------------------------------------------
@@ -245,6 +293,8 @@ async function startDraft() {
   const myTeamSlot = Number(document.getElementById("setup-slot").value);
   const mode = document.getElementById("setup-mode").value;
   const players = await loadPlayers();
+  updateDataSourceBanner();
+  await loadTeamContext();
 
   initDraftState({
     numTeams,
@@ -286,7 +336,7 @@ function renderBoard() {
       <td>${pick.round}</td>
       <td>${pick.teamSlot}${pick.teamSlot === state.myTeamSlot ? " (you)" : ""}</td>
       <td>${player ? player.name : "?"}</td>
-      <td><span class="pos-badge">${player ? player.position : "?"}</span></td>
+      <td><span class="pos-badge pos-${player ? player.position : ""}">${player ? player.position : "?"}</span></td>
     `;
     tbody.appendChild(tr);
   }
@@ -295,15 +345,79 @@ function renderBoard() {
 // --- Rendering: Available Players ------------------------------------------------
 function scoredAvailable(state) {
   const available = getAvailablePlayers(state);
+  const weights = getWeights();
+  const leagueSettings = {
+    numTeams: state.numTeams,
+    startersPerTeamByPosition: { QB: 1, RB: 2.5, WR: 2.5, TE: 1, K: 1, DEF: 1 },
+  };
   return available
     .map((p) => ({
       player: p,
-      scoreResult: scoreProjectionsTier(p, available, {
-        numTeams: state.numTeams,
-        startersPerTeamByPosition: { QB: 1, RB: 2.5, WR: 2.5, TE: 1, K: 1, DEF: 1 },
-      }),
+      scoreResult: scorePlayer(
+        p,
+        { allPlayersAtPosition: available, leagueSettings, teamContext: cachedTeamContext || {} },
+        weights
+      ),
     }))
     .sort((a, b) => b.scoreResult.score - a.scoreResult.score);
+}
+
+function playerAvatarHtml(player) {
+  if (!player.headshot) return `<span class="avatar avatar-fallback">${player.position}</span>`;
+  return `<img class="avatar" src="${player.headshot}" alt="" loading="lazy" onerror="this.outerHTML='<span class=&quot;avatar avatar-fallback&quot;>${player.position}</span>'" />`;
+}
+
+function injuryBadgeHtml(player) {
+  const status = (player.injuryStatus || "").toLowerCase();
+  if (!status) return "";
+  const cls = status.includes("out") || status.includes("ir")
+    ? "injury-out"
+    : status.includes("doubtful")
+      ? "injury-doubtful"
+      : "injury-questionable";
+  return `<span class="injury-badge ${cls}" title="${player.injuryNote || ""}">${player.injuryStatus}</span>`;
+}
+
+// Chart.js instance, recreated on each render rather than mutated in place — simplest
+// correct approach for a table that can change shape (filter/weights/strategy) often.
+let availableChart = null;
+function renderAvailableChart(ranked) {
+  const canvas = document.getElementById("available-chart");
+  if (!canvas || typeof Chart === "undefined") return; // Chart.js CDN blocked/offline — degrade gracefully, no crash
+  const top = ranked.slice(0, 10);
+  const colors = {
+    QB: "#c77dff",
+    RB: "#00ff87",
+    WR: "#4cc9f0",
+    TE: "#ffb703",
+    K: "#9fb3c8",
+    DEF: "#ef476f",
+  };
+
+  if (availableChart) availableChart.destroy();
+  availableChart = new Chart(canvas.getContext("2d"), {
+    type: "bar",
+    data: {
+      labels: top.map((r) => r.player.name),
+      datasets: [
+        {
+          label: "Score (0-100, blended tiers)",
+          data: top.map((r) => r.scoreResult.score),
+          backgroundColor: top.map((r) => colors[r.player.position] || "#8ea3b8"),
+        },
+      ],
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { min: 0, max: 100, grid: { color: "#22415c" }, ticks: { color: "#8ea3b8" } },
+        y: { grid: { display: false }, ticks: { color: "#e8f1f8" } },
+      },
+    },
+  });
 }
 
 function renderAvailablePlayers() {
@@ -316,16 +430,18 @@ function renderAvailablePlayers() {
   const ranked = scoredAvailable(state).filter(
     (r) => filter === "ALL" || r.player.position === filter
   );
+  renderAvailableChart(ranked);
 
   const mine = isMyPick(state);
   for (const { player, scoreResult } of ranked.slice(0, 60)) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${player.name}</td>
-      <td><span class="pos-badge">${player.position}</span></td>
-      <td>${player.team}</td>
+      <td class="player-cell">${playerAvatarHtml(player)}<span>${player.name}</span> ${injuryBadgeHtml(player)}</td>
+      <td><span class="pos-badge pos-${player.position}">${player.position}</span></td>
+      <td>${player.team}${player.byeWeek ? ` <span class="tag">bye ${player.byeWeek}</span>` : ""}</td>
       <td>Tier ${scoreResult.tier ?? "?"}</td>
-      <td>${scoreResult.vorp.toFixed(1)}</td>
+      <td class="numeric">${scoreResult.vorp.toFixed(1)}</td>
+      <td class="numeric"><strong>${scoreResult.score.toFixed(0)}</strong></td>
       <td><button class="btn btn-primary btn-draft" data-player="${player.providerPlayerId}" ${mine ? "" : "disabled"}>Draft</button></td>
     `;
     tbody.appendChild(tr);
@@ -341,6 +457,24 @@ function draftPlayer(providerPlayerId) {
   if (!state || !isMyPick(state)) return;
   recordPick(state, providerPlayerId, "manual");
   renderAll();
+}
+
+// --- Tier-breakdown visualization (no chart library needed for this one — four
+// small percentage bars, color-coded, one per scoring tier) --------------------------
+const TIER_LABELS = { projections: "Proj", efficiency: "Eff", contextual: "Ctx", risk: "Risk" };
+function renderTierBars(tierBreakdown) {
+  const rows = Object.entries(TIER_LABELS)
+    .map(([key, label]) => {
+      const value = Math.max(0, Math.min(100, Math.round(tierBreakdown[key] ?? 0)));
+      return `
+        <div class="tier-bar-row">
+          <span class="tier-bar-label">${label}</span>
+          <div class="tier-bar-track"><div class="tier-bar-fill tier-bar-${key}" style="width:${value}%"></div></div>
+          <span class="tier-bar-value">${value}</span>
+        </div>`;
+    })
+    .join("");
+  return `<div class="tier-bars">${rows}</div>`;
 }
 
 // --- Rendering: Recommendation ----------------------------------------------------
@@ -390,17 +524,18 @@ function renderRecommendation() {
     modeCompareHtml +
     top3
       .map(({ player, scoreResult }, i) => {
-        const cliff =
-          scoreResult.remainingInTier !== null && scoreResult.remainingInTier <= 1
-            ? `<li class="cliff-warning">⚠ ${scoreResult.reasoning[scoreResult.reasoning.length - 1]}</li>`
-            : "";
+        const isCliffLine = (r) => r.includes("left in this tier");
+        const cliffLine = scoreResult.reasoning.find(isCliffLine);
         const reasoningItems = scoreResult.reasoning
-          .slice(0, cliff ? -1 : undefined)
+          .filter((r) => !isCliffLine(r))
           .map((r) => `<li>${r}</li>`)
           .join("");
+        const cliff = cliffLine ? `<li class="cliff-warning">⚠ ${cliffLine}</li>` : "";
+        const tierBars = scoreResult.tierBreakdown ? renderTierBars(scoreResult.tierBreakdown) : "";
         return `
           <div class="rec-card rank-${i + 1}">
-            <h4>#${i + 1} ${player.name} <span class="pos-badge">${player.position}</span> — ${player.team}</h4>
+            <h4>#${i + 1} ${player.name} <span class="pos-badge pos-${player.position}">${player.position}</span> — ${player.team}</h4>
+            ${tierBars}
             <ul>${reasoningItems}${cliff}</ul>
             <button class="btn btn-primary btn-draft" data-player="${player.providerPlayerId}">Draft this player</button>
           </div>
@@ -469,6 +604,41 @@ function renderPreferenceLayer(ranked) {
 }
 
 // --- Rendering: My Roster -----------------------------------------------------------
+/** All starting slots (not just open ones) with filled/total counts, for the roster
+ * needs progress-bar visualization. Mirrors getRosterNeeds' allocation logic but
+ * reports every slot, not just the ones still open. */
+function computeAllSlotStatus(state, teamSlot) {
+  const roster = getRosterForSlot(state, teamSlot);
+  const counts = {};
+  for (const p of roster) counts[p.position] = (counts[p.position] || 0) + 1;
+
+  return state.rosterSlots
+    .filter((slotDef) => slotDef.slot !== "BN" && slotDef.slot !== "IR")
+    .map((slotDef) => {
+      const filled = slotDef.eligiblePositions.reduce(
+        (sum, pos) => sum + Math.min(counts[pos] || 0, slotDef.count),
+        0
+      );
+      return { slot: slotDef.slot, count: slotDef.count, filled: Math.min(filled, slotDef.count) };
+    });
+}
+
+function renderNeedsBars(slotStatus) {
+  const rows = slotStatus
+    .map(({ slot, count, filled }) => {
+      const pct = count > 0 ? Math.round((filled / count) * 100) : 0;
+      const openCls = filled < count ? "needs-open" : "";
+      return `
+        <div class="need-bar-row">
+          <span class="need-bar-label">${slot}</span>
+          <div class="need-bar-track"><div class="need-bar-fill ${openCls}" style="width:${pct}%"></div></div>
+          <span class="need-bar-text">${filled}/${count} filled</span>
+        </div>`;
+    })
+    .join("");
+  return `<div class="needs-bars">${rows}</div>`;
+}
+
 function renderRoster() {
   const container = document.getElementById("roster-content");
   const state = getDraftState();
@@ -478,17 +648,18 @@ function renderRoster() {
   }
 
   const roster = getMyRoster(state);
-  const needs = getRosterNeeds(state, state.myTeamSlot);
+  const slotStatus = computeAllSlotStatus(state, state.myTeamSlot);
 
   const rosterRows = roster
-    .map((p) => `<tr><td>${p.name}</td><td><span class="pos-badge">${p.position}</span></td><td>${p.team}</td></tr>`)
+    .map(
+      (p) =>
+        `<tr><td class="player-cell">${playerAvatarHtml(p)}<span>${p.name}</span></td><td><span class="pos-badge pos-${p.position}">${p.position}</span></td><td>${p.team}${p.byeWeek ? ` <span class="tag">bye ${p.byeWeek}</span>` : ""}</td></tr>`
+    )
     .join("");
-  const needsText = needs.length
-    ? needs.map((n) => `${n.slot} (${n.remaining} open)`).join(", ")
-    : "All starting slots filled.";
 
   container.innerHTML = `
-    <p class="hint"><strong>Open needs:</strong> ${needsText}</p>
+    <h3>Roster needs</h3>
+    ${renderNeedsBars(slotStatus)}
     <table class="data-table">
       <thead><tr><th>Player</th><th>Pos</th><th>Team</th></tr></thead>
       <tbody>${rosterRows || `<tr><td colspan="3">No picks yet.</td></tr>`}</tbody>
@@ -535,6 +706,9 @@ function main() {
 
   refreshSetupVisibility();
   renderAll();
+  loadPlayers()
+    .then(updateDataSourceBanner)
+    .catch((err) => logDebug("Player data load failed", String(err)));
   logDebug("App booted", { leagues: LEAGUES });
 }
 
