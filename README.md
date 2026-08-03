@@ -151,3 +151,21 @@ The recommendation engine should consider more than standard box score stats. Pl
 ## Notes
 
 This project should be built in a way that makes model logic modular and easy to expand over time. New data sources, weighting factors, and decision rules should be addable without restructuring the full app.
+
+## Local development (added as scaffolding landed)
+
+```bash
+npm install
+npx vercel dev   # serves draft-app/, season-app/, and /api together locally
+```
+
+Required environment variables (put in `.env.local`, already git-ignored — never commit real values):
+
+- `YAHOO_CLIENT_ID` — from the Yahoo Developer App (Public Client, no secret exists)
+- `ESPN_SWID`, `ESPN_S2` — the account owner's own ESPN session cookies (see `docs/DATA_SOURCES.md` for how these are used and why they're required for a private ESPN league)
+
+See `docs/CONTEXT.md`, `docs/ACTION_LOG.md`, `docs/ISSUE_LOG.md`, and `docs/DATA_SOURCES.md` for the full running history of decisions, what's built vs. stubbed, and exact endpoints — read `CONTEXT.md` first in any new session before making changes.
+
+## Second league (added 2026-08-03)
+
+This platform now supports two leagues on two platforms: Yahoo (league 865803) and ESPN (league 647918841), both redraft/PPR with upcoming drafts. The scoring/recommendation engine is provider-agnostic (`api/_lib/types.ts`) so it doesn't matter which platform a team's data comes from.

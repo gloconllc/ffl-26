@@ -1,0 +1,217 @@
+/* Design system per docs/CONTEXT.md — dark default, light available, Rajdhani for
+   display type, Inter for body copy. Tab layout kicks in under 768px. */
+
+:root {
+  --color-bg: #0d1b2a;
+  --color-surface: #132a3e;
+  --color-surface-raised: #1b3a52;
+  --color-text: #e8f1f8;
+  --color-text-muted: #9fb3c8;
+  --color-top-pick: #00ff87;
+  --color-caution: #ffb703;
+  --color-avoid: #ef233c;
+  --color-border: #24445e;
+  --font-display: "Rajdhani", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --transition-fast: 200ms ease;
+}
+
+[data-theme="light"] {
+  --color-bg: #f4f7fa;
+  --color-surface: #ffffff;
+  --color-surface-raised: #eef3f7;
+  --color-text: #0d1b2a;
+  --color-text-muted: #4a5c6b;
+  --color-border: #d7e2ea;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.brand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.5rem;
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+.brand-accent {
+  color: var(--color-top-pick);
+}
+
+.btn {
+  font-family: var(--font-body);
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  transition: transform var(--transition-fast), background var(--transition-fast);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  background: var(--color-top-pick);
+  color: #04160f;
+  border-color: transparent;
+}
+
+.btn-ghost {
+  background: transparent;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 1.5rem;
+  padding: 1.5rem;
+}
+
+.tab-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tab-btn {
+  text-align: left;
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: var(--font-body);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.tab-btn.is-active,
+.tab-btn:hover {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
+.panel {
+  display: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.panel.is-active {
+  display: block;
+}
+
+.panel h2 {
+  font-family: var(--font-display);
+  margin-top: 0;
+}
+
+.hint {
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+}
+
+.card-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.card {
+  flex: 1 1 260px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.card h3 {
+  margin-top: 0;
+  font-family: var(--font-display);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tag {
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+}
+
+.status {
+  font-weight: 600;
+}
+
+.status-pending { color: var(--color-caution); }
+.status-connected { color: var(--color-top-pick); }
+.status-error { color: var(--color-avoid); }
+
+.debug-output {
+  margin-top: 1rem;
+  background: #04101a;
+  color: #9fb3c8;
+  padding: 1rem;
+  border-radius: 8px;
+  max-height: 240px;
+  overflow: auto;
+  font-size: 0.8rem;
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.slider-row label {
+  width: 180px;
+  flex-shrink: 0;
+}
+
+.slider-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--color-top-pick);
+}
+
+@media (max-width: 768px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+  .tab-bar {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+}

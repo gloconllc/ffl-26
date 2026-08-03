@@ -1,0 +1,17 @@
+{
+  "name": "ffl-26",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal Fantasy Football Intelligence Platform (Yahoo + ESPN) — draft app (Phase 1) and season app (Phase 2).",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "tsc --noEmit -p api/tsconfig.json"
+  },
+  "devDependencies": {
+    "@vercel/node": "^3.2.24",
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

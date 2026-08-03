@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FFL 26 — Draft Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1 class="brand">FFL<span class="brand-accent">26</span> Draft Assistant</h1>
+    <button id="theme-toggle" class="btn btn-ghost" type="button" aria-label="Toggle light/dark theme">☾</button>
+  </header>
+
+  <main class="app-shell">
+    <nav class="tab-bar" aria-label="Sections">
+      <button class="tab-btn is-active" data-panel="connect">Connect</button>
+      <button class="tab-btn" data-panel="board">Draft Board</button>
+      <button class="tab-btn" data-panel="recommend">Recommendation</button>
+      <button class="tab-btn" data-panel="roster">My Roster</button>
+      <button class="tab-btn" data-panel="settings">Settings</button>
+    </nav>
+
+    <section id="panel-connect" class="panel is-active">
+      <h2>League Connections</h2>
+      <p class="hint">Both leagues need a draft assistant this season — connect each one below.</p>
+
+      <div class="card-row">
+        <article class="card">
+          <h3>Yahoo <span class="tag">League 865803</span></h3>
+          <p id="yahoo-status" class="status status-pending">Not connected</p>
+          <button id="yahoo-connect-btn" class="btn btn-primary" type="button">Connect Yahoo</button>
+        </article>
+
+        <article class="card">
+          <h3>ESPN <span class="tag">League 647918841</span></h3>
+          <p id="espn-status" class="status status-pending">Checking…</p>
+          <button id="espn-check-btn" class="btn btn-primary" type="button">Test ESPN Connection</button>
+        </article>
+      </div>
+
+      <pre id="debug-output" class="debug-output" hidden></pre>
+    </section>
+
+    <section id="panel-board" class="panel">
+      <h2>Draft Board</h2>
+      <p class="hint">Live pick tracking, tiering, and ADP arbitrage alerts land here once both leagues are connected and the scoring engine is wired in (see docs/CONTEXT.md — this is next).</p>
+    </section>
+
+    <section id="panel-recommend" class="panel">
+      <h2>Recommendation</h2>
+      <p class="hint">Top-3 recommended picks, confidence breakdown, and reasoning bullets — depends on <code>shared/scoring-engine.js</code>, currently stubbed.</p>
+    </section>
+
+    <section id="panel-roster" class="panel">
+      <h2>My Roster</h2>
+      <p class="hint">Running roster view with positional needs highlighted — placeholder.</p>
+    </section>
+
+    <section id="panel-settings" class="panel">
+      <h2>Settings</h2>
+      <div class="slider-row">
+        <label for="weight-projections">Projections weight</label>
+        <input id="weight-projections" type="range" min="0" max="100" value="40" />
+      </div>
+      <div class="slider-row">
+        <label for="weight-efficiency">Efficiency weight</label>
+        <input id="weight-efficiency" type="range" min="0" max="100" value="30" />
+      </div>
+      <div class="slider-row">
+        <label for="weight-contextual">Contextual weight</label>
+        <input id="weight-contextual" type="range" min="0" max="100" value="20" />
+      </div>
+      <div class="slider-row">
+        <label for="weight-risk">Risk weight</label>
+        <input id="weight-risk" type="range" min="0" max="100" value="10" />
+      </div>
+      <p class="hint">Sliders are wired to nothing yet — they'll feed <code>shared/scoring-engine.js</code>'s weights once that's implemented.</p>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
