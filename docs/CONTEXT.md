@@ -7,11 +7,29 @@ is what lets any future session — human or AI — pick up without re-deriving 
 
 ## What this is
 
-A two-phase Fantasy Football Intelligence Platform for a real Yahoo Fantasy Football
-league, owned by John Picou (GloCon Solutions / personal project, unrelated to Visit
-Anaheim work). Phase 1: a draft-day assistant. Phase 2: a season-long dashboard
-(lineups, trades, waivers, weekly intel). Deploys to Vercel, source lives at
+**A single, unified Fantasy Football Intelligence Platform** for two real leagues
+(Yahoo 865803, ESPN 647918841), owned by John Picou (GloCon Solutions / personal
+project, unrelated to Visit Anaheim work). Deploys to Vercel, source lives at
 https://github.com/gloconllc/ffl-26.
+
+**Architecture pivot, confirmed 2026-08-03 — read this before touching naming or nav:**
+this is NOT "a draft app" plus "a separate season app." The user was explicit: "the
+draft is just a piece of the overall app... the app consists of draft, season lineup
+optimizer, trade optimizer, free agent optimizer, kalshi picks — all those are included
+in this app, they all work together, not separate — that's what will separate me from
+the rest." The competitive differentiator IS the integration: the same scoring brain,
+the same roster/needs state, and the same preference layer drive every module. A trade
+suggestion has to know what you drafted and why; the free-agent optimizer has to know
+your current needs from the same roster the draft module built; Kalshi signals should
+be visible everywhere a player/team appears, not walled off in their own screen.
+**Practical consequence:** one app shell (currently `draft-app/draft-app.html` —
+filename is legacy, treat it as the main app entry point, not a draft-only page), one
+nav bar with every module as a tab (Connect, Draft, Lineup, Trades, Free Agents,
+Markets, My Roster, Settings), all reading/writing the same `shared/` state modules.
+Do not build `season-app/` as a second, separately-loaded HTML page/app — fold any
+season-specific logic into new tabs/panels inside the same shell instead. The empty
+`season-app/` folder can hold season-specific *logic modules* (imported into the one
+app), never a second page.
 
 ## Confirmed league facts
 - Yahoo league ID: **865803** — Snake draft, PPR (quirks beyond PPR still unconfirmed)
@@ -178,14 +196,18 @@ confirm or override, and if overridden, recompute forward without punishing the
 choice. Pre-seeded with the Lamar Jackson preference above. See ACTION_LOG.md for
 the actual files.
 
-## Kalshi badge — now real code, not just a design decision (2026-08-03)
-`shared/kalshi-client.js` calls Kalshi's real public market-data API directly
-(`https://external-api.kalshi.com/trade-api/v2`, no auth). Exact NFL series
-tickers/market naming are NOT confirmed — this sandbox cannot reach Kalshi to verify
-(see docs/DATA_SOURCES.md network constraint), so the client tries a small set of
-plausible candidates and degrades gracefully (badge simply doesn't render) rather than
-guessing at numbers. Confirm real tickers once this runs somewhere with real network
-access, then tighten the client instead of trial-and-error guessing further.
+## Kalshi badge — designed, NOT yet coded (correcting a stale note — 2026-08-03)
+An earlier note in this file claimed `shared/kalshi-client.js` already existed; it does
+not (verified by directory listing 2026-08-03) — correcting that here so a future
+session doesn't assume it's done. Design is still valid and unchanged: call Kalshi's
+real public market-data API directly (`https://external-api.kalshi.com/trade-api/v2`,
+no auth), small "K" badge on player/team rows showing price/implied probability/trend,
+clearly labeled, feeding a separate combos/parlay builder module (never the fantasy
+roster engine). Exact NFL series tickers/market naming are NOT confirmed — this sandbox
+cannot reach Kalshi to verify (see docs/DATA_SOURCES.md network constraint). Per the
+2026-08-03 unified-app pivot above, this becomes its own "Markets" tab in the one app
+shell, and its badge component should be reusable wherever a player/team appears
+(Draft, Lineup, Trades, Free Agents) — not confined to its own tab.
 
 ## Phase 2 requirement, precisely stated (queued — not built, Phase 1 still first)
 User wants in-season free-agent/waiver and trade data updated daily, AND — this is the
@@ -224,16 +246,22 @@ we're adopting rather than re-deciding:
   it needs to happen either on the user's own machine (local dev server) or against a
   deployed Vercel URL with its own registered redirect URI. Note this as a testing
   constraint, not a blocker to writing the code.
-- Repo structure the README already proposes — adopting this over what we'd started
-  with, and adding `/api` (needed for the Yahoo CORS problem, not in the original
-  README) and `/docs` (our cross-session continuity trio):
+- Repo structure — **superseded 2026-08-03 by the unified-app pivot above.** Original
+  README proposed a `draft-app/` + `season-app/` two-product split; we're keeping the
+  folder names (renaming now would break working rewrites/paths for no user-visible
+  benefit — see vercel.json) but the *app* is one shell with every module as a tab:
 ```
 FFL_26/
 ├── README.md
-├── draft-app/            (Phase 1: draft-app.html, styles.css, app.js)
-├── season-app/           (Phase 2: season-app.html, styles.css, app.js)
+├── draft-app/            (the one app shell: draft-app.html, styles.css, app.js —
+│                          hosts Connect/Draft/Lineup/Trades/Free Agents/Markets/
+│                          Roster/Settings as tabs of a single page, not a separate
+│                          "draft-only" product)
+├── season-app/           (currently empty — reserved for season-specific *logic
+│                          modules* to be imported into shared/ and surfaced as tabs
+│                          in draft-app.html; NOT a second HTML page/app)
 ├── shared/               (yahoo-auth.js, scoring-engine.js, preference-engine.js,
-│                          data-sources.js — used by both phases)
+│                          data-sources.js — the shared brain every module reads/writes)
 ├── api/                  (Vercel serverless functions — Yahoo OAuth token exchange
 │                          proxy, Yahoo API read proxy; not in the original README,
 │                          added because Yahoo's API has no browser CORS support)

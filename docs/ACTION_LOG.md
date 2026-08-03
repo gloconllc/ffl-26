@@ -2,6 +2,64 @@
 
 Newest entries at the top. One entry per meaningful action, not per keystroke.
 
+## 2026-08-03 (session 3 — unified-app pivot + Strategy preset selector)
+- **Architecture pivot, directly from the user:** "the draft is just a piece of the
+  overall app... draft, season lineup optimizer, trade optimizer, free agent
+  optimizer, kalshi picks — all included in this app, they all work together, not
+  separate — that's what will separate me from the rest." Recorded as a load-bearing
+  decision in `docs/CONTEXT.md`. This is one app, not a draft product plus a separate
+  season product.
+- Renamed the visible app from "FFL 26 — Draft Assistant" to "FFL 26 — Command
+  Center" (`<title>`, header brand, header subtitle listing every module) in
+  `draft-app/draft-app.html`. Kept the folder/file name `draft-app/draft-app.html` as
+  the actual entry point (renaming the file would mean re-wiring `vercel.json`
+  rewrites and every asset path for zero user-visible benefit — the URL is always
+  `/`, the filename is an internal detail) but it is now documented in CONTEXT.md as
+  the one app shell, not a draft-only page.
+- Added four new tabs/panels to that same shell — Lineup, Trades, Free Agents,
+  Markets — each currently a clearly labeled "not built yet, queued Phase 2" banner
+  that explicitly states it will share the same roster state, scoring engine, and
+  preference layer as Draft once built, rather than being separate mini-apps.
+- Corrected a stale claim in `docs/CONTEXT.md` that `shared/kalshi-client.js` already
+  existed — it does not (verified by directory listing); the Kalshi badge remains
+  designed but not yet coded. Flagging this now so a future session doesn't assume
+  it's done.
+- Built the **Strategy preset selector** the user asked for ("the settings should be
+  more of you chose, then the brain then custom to see the weight difference then we
+  can make a selection... have this setting available there before finalizing the
+  pick"):
+  - `draft-app/app.js`: `getStrategyPreset()`/`setStrategyPreset()`,
+    `getNeedAwarenessSlider()`/`setNeedAwarenessSlider()`, `effectiveNeedAwareness()`,
+    `sortByStrategy(ranked, neededPositions, needAwareness)`. Need-awareness (0..1) is
+    the one axis that genuinely reorders recommendations today — with only the
+    Projections tier implemented, scaling that tier's own weight can't change ranking
+    order (multiplying every score by the same constant preserves order), so the three
+    presets are wired to this real, testable axis: **Recommended** = 1 (an open roster
+    need always outranks pure score — the original hard-sort behavior, reproduced
+    exactly via a boost equal to the pool's max score), **The Brain** = 0 (pure
+    VORP/tier score, needs ignored entirely — "the most points at all times no matter
+    what"), **Custom** = user's own slider value in between.
+  - Added the preset select to Settings (shared across the whole app) AND an inline
+    quick-pick on the Recommendation tab itself, in sync via the same storage key —
+    satisfies "have this setting available there before finalizing the pick," not
+    buried on a separate tab.
+  - `renderRecommendation()` now also computes what Recommended vs. The Brain would
+    each pick right now and shows the honest delta whenever they actually differ, so
+    the user sees the weight/outcome difference before committing to a pick, exactly
+    as asked.
+- Wired the previously-unused personal preference layer (`shared/preferences.js`,
+  `shared/preference-engine.js`) into the actual UI for the first time — a new
+  `renderPreferenceLayer()` in `app.js`, rendering into a new
+  `#preference-layer-content` div on the Recommendation tab. Shows the model's real
+  #1 pick under whichever strategy mode is active, the user's stated preference
+  (e.g. Lamar Jackson at pick 1) if one is still on the board, the honest VORP delta
+  between them, and two buttons — take the model's pick, or override and take the
+  preferred one (override path calls `acknowledgeOverride()` and logs it, then drafts
+  normally; per the founding rule, nothing about an override changes future scoring).
+- Ran `npm run selftest` after all changes — both `engine.selftest.mjs` and
+  `draft-flow.selftest.mjs` still pass unchanged (this feature only changes UI-layer
+  sorting/rendering, not the underlying scoring/draft-state engines).
+
 ## 2026-08-03 (session 2, full draft-app build-out — "build the entire app")
 - Built a genuinely playable/usable draft flow, not just a connect page. New modules:
   - `shared/data/placeholder-players.json` — ~120 players across all positions.
