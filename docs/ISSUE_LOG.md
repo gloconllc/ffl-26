@@ -37,9 +37,24 @@ markets).
 **Resolution:** Kalshi (and Polymarket) implied probabilities are pulled in as a
 clearly labeled contextual data signal only (e.g. "Market-implied win probability:
 63%"), feeding the existing scoring tiers alongside Vegas lines. No buy/sell action, no
-disguised framing, no "recommended parlay." Proposed to the user 2026-08-03; awaiting
-explicit confirmation but proceeding on this basis since it's the only version of the
-feature that gets built either way.
+disguised framing, no "recommended parlay." Proposed to the user 2026-08-03.
+
+**Refined UI design (confirmed 2026-08-03):** small "K" badge/icon on a player or team
+card. Hover/tap reveals current Kalshi price, implied probability, and trend vs. the
+previous snapshot. A user can click the icon to add/remove that event from a *separate*
+combos/parlay builder module — that builder is explicitly not part of the fantasy
+roster/draft engine, just a companion view. Public market data pulled read-only, no
+auth, from `https://external-api.kalshi.com/trade-api/v2` (same endpoint the installed
+`kalshi` skill wraps). This keeps the signal visible and clearly labeled (addressing the
+original "subtle" framing concern) while still separating real-money market data from
+fantasy roster decisions.
+
+**Implementation note:** the `.agents/skills/{nfl-data,betting,markets,kalshi}` skills
+are dev-time references for use *during this Claude session* while building (CLI/Python
+via the `sports-skills` package) — they are not a runtime dependency of the deployed
+app. The actual Vercel app is static HTML/CSS/JS + TypeScript serverless functions, so
+production code calls these same public HTTP APIs directly in TypeScript, not through
+the Python package.
 
 ## 2026-08-03 — Zero-backend static file can't actually reach Yahoo
 

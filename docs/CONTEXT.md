@@ -14,13 +14,45 @@ Anaheim work). Phase 1: a draft-day assistant. Phase 2: a season-long dashboard
 https://github.com/gloconllc/ffl-26.
 
 ## Confirmed league facts
-- Yahoo league ID: **865803**
-- Draft type: Snake
-- Scoring: PPR (exact quirks beyond PPR — still unconfirmed, see Open Questions)
-- Draft window: 2–4 weeks out from 2026-08-03
-- Team count, draft date/rounds — still unconfirmed, see Open Questions
-- DST vs IDP — will read from the user's actual Yahoo league settings once connected,
-  not hardcoded
+- Yahoo league ID: **865803** — Snake draft, PPR (quirks beyond PPR still unconfirmed)
+- ESPN league ID: **647918841** — second team, second league, added 2026-08-03.
+  Redraft league, PPR scoring, draft still upcoming — **Phase 1 draft assistant needed
+  for BOTH leagues**, not just Yahoo. Team count/exact draft date/rounds unconfirmed.
+- Draft window (Yahoo league): 2–4 weeks out from 2026-08-03; ESPN draft timing unknown
+- Team count, exact draft date/rounds (both leagues) — still unconfirmed, see Open Qs
+- DST vs IDP — read from each league's actual settings once connected, not hardcoded
+
+## Credentials — where they actually live (NEVER put real values in this file or any
+other committed file; this section documents *what exists and where*, not the values)
+- `/home/claude/ffl-26/.env.local` — confirmed git-ignored (`git check-ignore` verified
+  2026-08-03). Contains: `YAHOO_LEAGUE_ID`, `YAHOO_APP_ID`, `YAHOO_CLIENT_ID` (Yahoo app
+  is a Public Client — no client secret exists for it, the Client ID is not
+  highly sensitive by design), `ESPN_LEAGUE_ID`, `ESPN_SWID`, `ESPN_S2`.
+- **ESPN_SWID / ESPN_S2 are session-auth cookies from the user's own logged-in ESPN
+  account** — functionally equivalent to being logged in as them for ESPN Fantasy
+  purposes. Treat with the same care as a password: never log them, never write them
+  into any file that gets committed or displayed, only read them server-side inside
+  the `/api` ESPN proxy function, never send them to the browser/client-side JS. They
+  were pasted directly into chat by the user (their choice) — flagged once, not
+  belabored; going forward, real values only ever go into `.env.local`, never restated
+  in docs, commit messages, or responses.
+- GitHub push credentials (fine-grained PAT) — still pending, see ISSUE_LOG.md.
+
+## ESPN Fantasy integration — architecture decision (2026-08-03)
+ESPN has no official public Fantasy Sports API/OAuth (unlike Yahoo). The established
+community pattern (confirmed via search — see mkreiser/ESPN-Fantasy-Football-API,
+cwendt94/espn-api, ffscrapr) for a *private* league (this one) is: call ESPN's internal
+v3 endpoint (`https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/{year}/segments/0/leagues/{leagueId}`,
+or legacy `fantasy.espn.com/apis/v3/...`) with the `SWID` and `espn_s2` values sent as
+cookies on the request. This must happen server-side (same CORS reasoning as Yahoo, plus
+the cookies must never reach client-side JS) — extends our existing `/api` serverless
+proxy pattern rather than requiring a new architecture.
+**Decision: build a shared provider interface** (`getLeagueInfo`, `getRoster`,
+`getMatchup`, `getDraftResults`, `getAvailablePlayers`, etc.) with two backend
+implementations — `api/providers/yahoo.ts` and `api/providers/espn.ts` — so the
+scoring/recommendation engine in `shared/` never needs to know which platform a team
+came from. Mirrors the pattern already seen in the Kalshi/Polymarket skills (shared
+`search_markets`/`get_todays_events` interface over two different backends).
 
 ## Architecture (decided, do not re-litigate without a real reason)
 - Static frontend (plain HTML/CSS/JS, no framework) + a small number of Vercel
@@ -110,11 +142,17 @@ supplied a generic multi-sport template, we use only the football branch)
 This is Phase 2 scope (season app) — queued, not built yet; we're still finishing
 Phase 1 scaffolding first per the user's own prioritization.
 
-## Open questions (blocking full Yahoo wiring, not blocking scaffolding)
+## Open questions (blocking full wiring, not blocking scaffolding)
+Yahoo league (865803):
 1. Number of teams in the league
 2. Scoring quirks beyond PPR
 3. Exact draft date, number of rounds / roster spots
-(League ID confirmed 2026-08-03: 865803 — see Confirmed league facts above)
+
+ESPN league (647918841) — draft upcoming, PPR, redraft (confirmed 2026-08-03):
+4. Number of teams in the ESPN league
+5. Scoring quirks beyond PPR
+6. Exact draft date, number of rounds / roster spots
+7. Draft type — snake or auction? (not yet asked for this league specifically)
 
 ## Repo already had a README.md on GitHub before this session touched it
 `origin/main` (https://github.com/gloconllc/ffl-26) already contained one commit
