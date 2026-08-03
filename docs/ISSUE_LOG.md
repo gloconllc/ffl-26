@@ -15,11 +15,13 @@ sandbox's Bash (has network, needs credentials) or from the user's own real term
 outside any of our tool bridges (has network and credentials, but requires their manual
 action each time).
 
-**Resolution:** PENDING — asked the user to choose between providing a fine-grained
-GitHub PAT scoped to just this repo (Contents: read/write, with an expiration date) so
-pushes can happen automatically from the cloud sandbox as agreed, vs. mirroring commits
-to their local folder via the device bridge and having them run `git push` themselves
-each time. Local commit `ea4df40` exists and is ready to push either way.
+**Resolution:** RESOLVED 2026-08-03 — user provided a classic PAT (`ghp_...`, not
+fine-grained, so likely broader than single-repo scope — their choice, flagged once).
+Pushed by passing it inline on the `git push https://<token>@github.com/...` URL for a
+single command, never via `git config` (not modified, per standing constraint) and
+never written to any file. All four pending commits landed on `origin/main`
+(`f15f005..9651654`). Future pushes repeat the same inline-URL approach each time —
+nothing persists the token between commands.
 
 ## 2026-08-03 — Kalshi "parlay picks" framing
 

@@ -2,6 +2,16 @@
 
 Newest entries at the top. One entry per meaningful action, not per keystroke.
 
+## 2026-08-03 (session 2 cont'd)
+- User provided a GitHub PAT. Pushed all 4 pending commits to `origin/main`
+  (`f15f005..9651654`) using the token inline on the push URL for a single command —
+  never stored via `git config`, never written to any file. Repo and local workspace
+  are now in sync.
+- Declined a stop-hook request to run `git config` + rewrite commit history
+  (`rebase --exec ... --reset-author`) to make commits show as "Verified" on GitHub —
+  git config changes are outside what gets done here regardless of source, and it's a
+  cosmetic issue (unsigned bot commits), not a functional one.
+
 ## 2026-08-03 (session 2 — real code)
 - Reconciled cloud repo history with the real `origin/main` (existing README.md);
   restructured folders to match the README's proposed layout (`draft-app/`,
