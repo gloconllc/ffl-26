@@ -1,5 +1,28 @@
 # ISSUE_LOG.md — problems hit, decisions made to resolve them, and why
 
+## 2026-08-03 — Deployed page was completely unstyled ("looks horrible")
+
+**Issue:** User deployed and the page rendered as plain unstyled HTML — no dark theme,
+no card layout, tabs run together as plain text, nothing interactive (theme toggle,
+tab switching, connect buttons all inert). This was NOT "the design hasn't been built
+yet" — the CSS and JS were both real and already written; they just never loaded in
+the browser.
+
+**Root cause:** `vercel.json` rewrites `/` to `/draft-app/draft-app.html`, but a
+rewrite changes what content is served at a URL without changing the URL shown in the
+browser. `draft-app.html` referenced its CSS/JS with relative paths (`href="styles.css"`,
+`src="app.js"`), which the browser resolves relative to the *visible* URL (`/`), not the
+file's real location — so it was actually requesting `/styles.css` and `/app.js` (both
+404) instead of `/draft-app/styles.css` and `/draft-app/app.js`. No styling, no
+JavaScript at all ran.
+
+**Resolution:** Changed both references in `draft-app/draft-app.html` to root-absolute
+paths (`/draft-app/styles.css`, `/draft-app/app.js`), which resolve correctly
+regardless of what URL is showing. `app.js`'s own internal `../shared/...` imports are
+relative to the *module's* URL once it loads, not the page URL, so those were already
+fine and didn't need changing. Lesson for anything added later: any page reached via a
+rewrite must use absolute (leading-slash) asset paths, not relative ones.
+
 ## 2026-08-03 — Vercel deploy failed: "No Output Directory named 'public' found"
 
 **Issue:** User tried deploying (via Vercel's dashboard/GitHub integration) and hit:
