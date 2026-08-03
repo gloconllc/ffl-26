@@ -2,6 +2,48 @@
 
 Newest entries at the top. One entry per meaningful action, not per keystroke.
 
+## 2026-08-03 (session 2, full draft-app build-out — "build the entire app")
+- Built a genuinely playable/usable draft flow, not just a connect page. New modules:
+  - `shared/data/placeholder-players.json` — ~120 players across all positions.
+    **PLACEHOLDER/SYNTHETIC** — real player names, made-up projections/ADP, clearly
+    labeled as such in the file, in a UI banner, and here. Not real 2026 rankings.
+    Sized for roughly an 8-round demo draft, not a full 15-round one — expand before
+    relying on it for anything longer.
+  - `shared/draft-state.js` — provider-agnostic draft engine: snake pick-order math,
+    available-player derivation, roster-needs calculation, persisted via storage.js
+    so a refresh mid-draft doesn't lose state (per the standing architecture decision).
+  - `shared/mock-draft.js` — practice-mode opponent AI (best-available VORP with a
+    need-filling bias) so the user can practice against something plausible.
+  - `shared/live-sync.js` — the integration point for real-time use during an actual
+    Yahoo/ESPN draft (per user's explicit ask — "setup draft to be used in real time
+    so I know what to pick next"). Real structure, but genuinely NOT verified: we
+    don't have a real draftresults payload shape from either provider yet, so
+    `mapPick()` is left as a caller-supplied function rather than guessed at. Needs a
+    real or practice live draft on Yahoo/ESPN to finish and verify.
+  - `shared/data-sources.js`: added `DEFAULT_ROSTER_SLOTS` (standard redraft roster,
+    used until we read a league's real settings).
+- Wired `shared/scoring-engine.js`'s `scoreProjectionsTier()` into the actual UI —
+  Available Players table and the Recommendation panel both rank by real VORP + tier
+  data now, not placeholders.
+- Rewrote `draft-app/draft-app.html` + `app.js` + `styles.css` substantially: a Draft
+  Setup card (team count/slot/mode), a full Draft Board (pick history table,
+  "Simulate to my turn"), Available Players (sortable/filterable, Draft button), Top-3
+  Recommendation cards (real reasoning bullets, tier-cliff warnings), My Roster
+  (drafted players + remaining starting needs).
+- Added `shared/draft-flow.selftest.mjs` — end-to-end test (not just isolated math)
+  running the real placeholder dataset through draft-state + mock-draft +
+  scoring-engine together for a simulated 8-round draft. Caught a real, useful finding
+  worth knowing: pure best-VORP picking with NO need-awareness drafted 5 WRs before a
+  single QB/TE/K/DEF — confirms the need-aware sort used in the actual UI
+  (`renderRecommendation` in app.js) is load-bearing, not cosmetic. The raw test
+  intentionally uses pure VORP to demonstrate this; the app itself does not have this
+  problem. `npm run selftest` now runs both test files; both pass.
+- Honest gaps still open: efficiency/contextual/risk tiers remain stubbed (settings
+  sliders for them persist but don't affect anything yet — the UI now says this
+  plainly rather than overclaiming); live-sync's payload mapping is unverified;
+  Yahoo/ESPN league settings (real roster slots, scoring quirks) aren't pulled in yet,
+  so DEFAULT_ROSTER_SLOTS is a stand-in.
+
 ## 2026-08-03 (session 2, "brain" work + gap closing)
 - Closed the Yahoo Client ID gap: added `shared/config.js` (non-secret, safe in client
   code per the Public Client/PKCE model) and wired it into `draft-app/app.js`, removing

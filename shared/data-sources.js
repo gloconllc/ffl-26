@@ -24,6 +24,20 @@ export const LEAGUES = {
 // when we actually test it, route it through /api instead like Yahoo/ESPN.
 export const KALSHI_BASE = "https://external-api.kalshi.com/trade-api/v2";
 
+// A reasonably standard redraft roster — until we read a league's real settings from
+// Yahoo/ESPN (see docs/CONTEXT.md open questions), this is the default used for
+// practice-mode setup. FLEX approximated as RB/WR/TE eligible.
+export const DEFAULT_ROSTER_SLOTS = [
+  { slot: "QB", count: 1, eligiblePositions: ["QB"] },
+  { slot: "RB", count: 2, eligiblePositions: ["RB"] },
+  { slot: "WR", count: 2, eligiblePositions: ["WR"] },
+  { slot: "TE", count: 1, eligiblePositions: ["TE"] },
+  { slot: "FLEX", count: 1, eligiblePositions: ["RB", "WR", "TE"] },
+  { slot: "K", count: 1, eligiblePositions: ["K"] },
+  { slot: "DEF", count: 1, eligiblePositions: ["DEF"] },
+  { slot: "BN", count: 6, eligiblePositions: ["QB", "RB", "WR", "TE", "K", "DEF"] },
+];
+
 export const API = {
   yahooToken: "/api/yahoo/token",
   yahooProxy: "/api/yahoo/proxy",

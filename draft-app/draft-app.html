@@ -46,17 +46,69 @@
 
     <section id="panel-board" class="panel">
       <h2>Draft Board</h2>
-      <p class="hint">Live pick tracking, tiering, and ADP arbitrage alerts land here once both leagues are connected and the scoring engine is wired in (see docs/CONTEXT.md — this is next).</p>
+      <p class="placeholder-banner">⚠ Player pool is PLACEHOLDER data (<code>shared/data/placeholder-players.json</code>) — realistic names, made-up projections/ADP. Swap for a real feed before an actual draft. See docs/DATA_SOURCES.md.</p>
+
+      <div id="setup-card" class="card">
+        <h3>Start a Draft</h3>
+        <div class="form-row">
+          <label for="setup-teams">Number of teams</label>
+          <input id="setup-teams" type="number" min="4" max="16" value="10" />
+        </div>
+        <div class="form-row">
+          <label for="setup-slot">My draft slot</label>
+          <input id="setup-slot" type="number" min="1" max="16" value="5" />
+        </div>
+        <div class="form-row">
+          <label for="setup-mode">Mode</label>
+          <select id="setup-mode">
+            <option value="practice">Practice (mock opponents)</option>
+            <option value="live">Live (sync real Yahoo/ESPN draft)</option>
+          </select>
+        </div>
+        <button id="setup-start-btn" class="btn btn-primary" type="button">Start Draft</button>
+        <button id="setup-reset-btn" class="btn btn-ghost" type="button">Reset current draft</button>
+      </div>
+
+      <div id="board-content" hidden>
+        <div class="board-toolbar">
+          <span id="on-the-clock" class="status status-connected"></span>
+          <button id="simulate-btn" class="btn btn-primary" type="button">Simulate to my turn</button>
+          <button id="live-sync-btn" class="btn btn-primary" type="button" hidden>Sync live picks</button>
+        </div>
+        <table class="data-table" id="picks-table">
+          <thead><tr><th>Pick</th><th>Round</th><th>Team</th><th>Player</th><th>Pos</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
 
     <section id="panel-recommend" class="panel">
       <h2>Recommendation</h2>
-      <p class="hint">Top-3 recommended picks, confidence breakdown, and reasoning bullets — depends on <code>shared/scoring-engine.js</code>, currently stubbed.</p>
+      <p class="hint">Real VORP + tier-cliff scoring (<code>shared/scoring-engine.js</code>'s <code>scoreProjectionsTier()</code>). Efficiency/Contextual/Risk tiers are still stubbed — see settings sliders below.</p>
+      <div id="recommendation-content"><p class="hint">Start a draft on the Draft Board tab first.</p></div>
+
+      <h3>Available Players</h3>
+      <div class="form-row">
+        <label for="position-filter">Filter position</label>
+        <select id="position-filter">
+          <option value="ALL">All</option>
+          <option value="QB">QB</option>
+          <option value="RB">RB</option>
+          <option value="WR">WR</option>
+          <option value="TE">TE</option>
+          <option value="K">K</option>
+          <option value="DEF">DEF</option>
+        </select>
+      </div>
+      <table class="data-table" id="available-table">
+        <thead><tr><th>Player</th><th>Pos</th><th>Team</th><th>Tier</th><th>VORP</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
     </section>
 
     <section id="panel-roster" class="panel">
       <h2>My Roster</h2>
-      <p class="hint">Running roster view with positional needs highlighted — placeholder.</p>
+      <div id="roster-content"><p class="hint">Start a draft on the Draft Board tab first.</p></div>
     </section>
 
     <section id="panel-settings" class="panel">
@@ -77,7 +129,7 @@
         <label for="weight-risk">Risk weight</label>
         <input id="weight-risk" type="range" min="0" max="100" value="10" />
       </div>
-      <p class="hint">Sliders are wired to nothing yet — they'll feed <code>shared/scoring-engine.js</code>'s weights once that's implemented.</p>
+      <p class="hint">Sliders persist to storage, but with only the Projections tier implemented, scaling its own weight can't change ranking order yet (multiplying every score by the same number doesn't reorder them) — relative weighting only matters once a second tier exists to weigh against it. They'll start visibly affecting recommendations as Efficiency/Contextual/Risk land (see <code>shared/scoring-engine.js</code>).</p>
     </section>
   </main>
 

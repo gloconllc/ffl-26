@@ -72,7 +72,13 @@ came from. Mirrors the pattern already seen in the Kalshi/Polymarket skills (sha
   labeled data signal ("Market-implied win probability: 63%") feeding the scoring model
   — never as disguised/hidden "picks" or real-money trade recommendations. See
   ISSUE_LOG.md 2026-08-03 for the full reasoning.
-- Data refresh cadence: hourly automatic during the season, plus manual refresh.
+- Data refresh cadence: hourly automatic during the season, **and** an on-demand
+  manual refresh option — reconfirmed 2026-08-03, both/and not either/or. Applies to
+  the full Phase 2 factor list already captured above (weather, coaching
+  tendencies/history, on/off-field behavior, historical head-to-head including
+  college, contract situation/incentives and trade likelihood, etc.) — this is a
+  reconfirmation, not a new decision; queued behind Phase 1 per the user's own
+  prioritization, not being built yet.
 
 ## Skills installed (`.agents/skills/`, via machina-sports/sports-skills)
 `nfl-data`, `betting`, `markets`, `kalshi` — read-only data-fetch skills, not
