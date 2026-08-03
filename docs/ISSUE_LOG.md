@@ -1,5 +1,26 @@
 # ISSUE_LOG.md — problems hit, decisions made to resolve them, and why
 
+## 2026-08-03 — Cloud sandbox has no GitHub push credentials
+
+**Issue:** First real commit made locally (`ea4df40`), but `git push -u origin main`
+failed: `fatal: could not read Username for 'https://github.com': terminal prompts
+disabled`. This cloud workspace has never been given GitHub auth.
+
+**Why this needed a decision:** The user gave blanket approval to commit+push as we go,
+but that requires actual credentials in this sandbox — there's no interactive login
+available here. The user's Mac already has working git auth (they cloned successfully),
+but the local device bridge (`device_bash`) has no network access at all, so it can't
+push either, regardless of credentials — a push can only happen from this cloud
+sandbox's Bash (has network, needs credentials) or from the user's own real terminal
+outside any of our tool bridges (has network and credentials, but requires their manual
+action each time).
+
+**Resolution:** PENDING — asked the user to choose between providing a fine-grained
+GitHub PAT scoped to just this repo (Contents: read/write, with an expiration date) so
+pushes can happen automatically from the cloud sandbox as agreed, vs. mirroring commits
+to their local folder via the device bridge and having them run `git push` themselves
+each time. Local commit `ea4df40` exists and is ready to push either way.
+
 ## 2026-08-03 — Kalshi "parlay picks" framing
 
 **Issue:** User asked to "put kalshi parlays as picks subtly on the app."
