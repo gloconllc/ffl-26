@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": {
+    "betting": {
+      "source": "machina-sports/sports-skills",
+      "sourceType": "github",
+      "skillPath": "skills/betting/SKILL.md",
+      "computedHash": "68553920d1e81e540a915509c5ccd1854862c7610adb4608605fdfe410ac25d1"
+    },
+    "kalshi": {
+      "source": "machina-sports/sports-skills",
+      "sourceType": "github",
+      "skillPath": "skills/kalshi/SKILL.md",
+      "computedHash": "f678121f91e6612669955b24140fad41b67c1b04c1756cae0b7332b8625d4596"
+    },
+    "markets": {
+      "source": "machina-sports/sports-skills",
+      "sourceType": "github",
+      "skillPath": "skills/markets/SKILL.md",
+      "computedHash": "d1661966b265b7f0b2c2179f301f8732b30a783b934482766de4190305d221f8"
+    },
+    "nfl-data": {
+      "source": "machina-sports/sports-skills",
+      "sourceType": "github",
+      "skillPath": "skills/nfl-data/SKILL.md",
+      "computedHash": "d201e172b7d433ca1db4fcf7f64384c5ea66e4f830536961a82fb5dcf4e8b6b4"
+    }
+  }
+}
