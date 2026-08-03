@@ -148,6 +148,54 @@ supplied a generic multi-sport template, we use only the football branch)
 This is Phase 2 scope (season app) — queued, not built yet; we're still finishing
 Phase 1 scaffolding first per the user's own prioritization.
 
+## Draft position + strategy philosophy (confirmed 2026-08-03, directly from the user —
+this is the founding requirement of the whole project, treat it as load-bearing)
+- Draft slots: **Yahoo — pick 1 overall.** ESPN — pick 3 or 4 (user unsure which,
+  confirm before that draft).
+- Stated preference: user typically takes **Lamar Jackson first, then builds around
+  him**, and plans to do that again. Historically **RB-heavy** by preference ("I like
+  the consistency"), but notes WR (and QB) have been scoring heavily lately.
+- **Explicit instruction: the brain optimizes for the most points at all times, no
+  matter what — including against the user's own stated bias.** The user's own words:
+  "although I may say I'm RB heavy but maybe that doesn't work this season so that's
+  where you have to help out and prove your points with data." This is the personal
+  preference layer's actual job (see below) — show the model's real #1, show the
+  stated preference, show the honest delta, let the user decide. Never silently favor
+  the stated preference over the data, and never silently drop the user's preference
+  either — surface both, every time.
+- Season-shape goal: **aggressive strategy, explicitly optimizing for finishing the
+  season strong** — user has a history of starting hot and fizzling late. This should
+  eventually inform the Contextual tier (playoff schedule quality, weeks 14-17
+  strength) once that tier is real — not just week-1 value. Noted here so it isn't
+  lost before that tier gets built.
+
+## Personal preference layer — now a real feature, not just a spec (2026-08-03)
+Implemented `shared/preferences.js` (stated preferences, persisted) and
+`shared/preference-engine.js` (real, not stubbed) per the flow the user specified in
+the very first message of this project: show the model's #1 pick with confidence,
+show the user's stated preference if one applies, compute the delta, let the user
+confirm or override, and if overridden, recompute forward without punishing the
+choice. Pre-seeded with the Lamar Jackson preference above. See ACTION_LOG.md for
+the actual files.
+
+## Kalshi badge — now real code, not just a design decision (2026-08-03)
+`shared/kalshi-client.js` calls Kalshi's real public market-data API directly
+(`https://external-api.kalshi.com/trade-api/v2`, no auth). Exact NFL series
+tickers/market naming are NOT confirmed — this sandbox cannot reach Kalshi to verify
+(see docs/DATA_SOURCES.md network constraint), so the client tries a small set of
+plausible candidates and degrades gracefully (badge simply doesn't render) rather than
+guessing at numbers. Confirm real tickers once this runs somewhere with real network
+access, then tighten the client instead of trial-and-error guessing further.
+
+## Phase 2 requirement, precisely stated (queued — not built, Phase 1 still first)
+User wants in-season free-agent/waiver and trade data updated daily, AND — this is the
+specific, actionable part — the app should know each league's actual waiver/FA
+transaction rules (waiver period length, processing day/time, FAAB vs. priority order)
+well enough to tell the user exactly when a pickup/drop they want becomes actually
+possible, not just that a player is available. This needs each league's real
+transaction settings pulled from Yahoo/ESPN — can't be stubbed with a placeholder the
+way the draft pool was, since the whole point is exact timing.
+
 ## Open questions (blocking full wiring, not blocking scaffolding)
 Yahoo league (865803):
 1. Number of teams in the league

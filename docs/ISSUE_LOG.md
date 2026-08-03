@@ -1,5 +1,36 @@
 # ISSUE_LOG.md — problems hit, decisions made to resolve them, and why
 
+## 2026-08-03 — Yahoo and ESPN not connecting on the deployed app
+
+**Issue:** User reports neither Yahoo nor ESPN connects on the live Vercel deployment.
+
+**Root causes (three, found by inspection — not yet confirmed live since this
+sandbox can't reach either provider, see docs/DATA_SOURCES.md):**
+1. `.env.local` (`YAHOO_CLIENT_ID`, `ESPN_SWID`, `ESPN_S2`) is git-ignored by design —
+   it only ever existed in this cloud sandbox, never pushed to GitHub, never present
+   on the user's Mac, and **never set on the actual Vercel project**. Every `/api`
+   function that reads these from `process.env` will throw "not set" on Vercel right
+   now — this alone would break both Yahoo and ESPN.
+2. Yahoo specifically: the OAuth redirect URI is computed as
+   `${location.origin}/callback` (see `shared/yahoo-auth.js`), but (a) no page/rewrite
+   existed at `/callback` at all — Yahoo redirecting back would 404 — and (b) even
+   with that fixed, the Yahoo Developer App only has `https://127.0.0.1/callback`
+   registered (per README.md), not the real deployed domain
+   (`https://ffl-26.vercel.app/callback`), so Yahoo would reject the request outright.
+3. ESPN: purely the missing-env-var issue (1) — no separate bug found.
+
+**Resolution:**
+- Fixed (1a): added `{ "source": "/callback", "destination": "/draft-app/draft-app.html" }`
+  to `vercel.json` — this was already anticipated in README.md's "Future production
+  setup" section, just not wired up yet.
+- Still needs the user to do two things I can't do remotely without more access:
+  (a) add `YAHOO_CLIENT_ID`, `ESPN_SWID`, `ESPN_S2` to the Vercel project's
+  Environment Variables (Settings → Environment Variables) and redeploy — OR give a
+  scoped Vercel token so this can be set programmatically, same pattern as the GitHub
+  PAT; (b) add `https://ffl-26.vercel.app/callback` as a second registered redirect
+  URI in the Yahoo Developer App console (developer.yahoo.com/apps) — this requires
+  their Yahoo login, can't be done by me either way.
+
 ## 2026-08-03 — Deployed page was completely unstyled ("looks horrible")
 
 **Issue:** User deployed and the page rendered as plain unstyled HTML — no dark theme,

@@ -1,32 +1,76 @@
-// The "personal preference layer" — see docs/CONTEXT.md for the exact flow the user
-// specified. STUBBED: real structure, math not implemented yet (depends on
-// scoring-engine.js being real first).
+// The "personal preference layer" — REAL now, not stubbed. This is the founding
+// requirement of the whole project (see the very first message in docs/CONTEXT.md's
+// project history, and the explicit reconfirmation on 2026-08-03): show the model's
+// real #1 pick, show the user's stated preference if one applies, show the honest
+// delta between them, let the user decide — and if they override, never punish them
+// for it going forward.
 //
-// Flow (non-negotiable, from the original spec):
-// 1. Show the model's #1 recommendation with full confidence breakdown.
-// 2. Show the user's stated preference for/against this player, if any.
-// 3. Compute a "personal adjusted score" that weighs the preference against the model.
-// 4. Ask the user to confirm or override — always show the confidence delta.
-// 5. If overridden: recompute the remaining board WITHOUT punishing the user — find
-//    the next-optimal picks given the accepted choice. Never make the user feel like
-//    the model is sulking about their decision.
-// 6. If accepted: draft normally, refresh the board.
+// Non-negotiable per the user's own words (2026-08-03): "the brain is focused on the
+// most points at all times no matter what" — this module NEVER blends bias into the
+// model's own recommendation. It only ever presents both, honestly, side by side.
 
 /**
- * @param {object} modelTopPick - result of scoring-engine.recommendPicks()[0]
- * @param {object|null} statedPreference - { playerId, direction: "for"|"against", strength: 0-1 }
- * @returns {{ recommendedPlayer: object, confidence: number, overridePrompt: string|null }}
+ * @param {{player: object, scoreResult: {score:number, reasoning:string[]}}} modelTopPick
+ * @param {{pref: object, player: object}|null} preferenceMatch - from
+ *   preferences.findMatchingPreference()
+ * @param {Array<{player:object, scoreResult:object}>} rankedAvailable - full ranked
+ *   list, needed to look up the preferred player's own score if it isn't the top pick
+ * @returns {null|{aligned:boolean, modelPick:object, preferredPick:object|null, confidenceDeltaPct:number|null, message:string}}
  */
-export function applyPreferenceLayer(modelTopPick, statedPreference) {
-  throw new Error("applyPreferenceLayer() is not implemented yet — see shared/preference-engine.js");
+export function applyPreferenceLayer(modelTopPick, preferenceMatch, rankedAvailable) {
+  if (!preferenceMatch) return null; // nothing stated, or nothing available matches
+
+  const preferredEntry = rankedAvailable.find(
+    (r) => r.player.providerPlayerId === preferenceMatch.player.providerPlayerId
+  );
+  if (!preferredEntry) return null;
+
+  const aligned =
+    modelTopPick.player.providerPlayerId === preferenceMatch.player.providerPlayerId;
+
+  if (aligned) {
+    return {
+      aligned: true,
+      modelPick: modelTopPick,
+      preferredPick: preferredEntry,
+      confidenceDeltaPct: 0,
+      message: `Good news — your stated preference for ${preferenceMatch.pref.playerName} already IS the model's #1 pick here. No tradeoff to make.`,
+    };
+  }
+
+  const modelScore = modelTopPick.scoreResult.score;
+  const preferredScore = preferredEntry.scoreResult.score;
+  // Positive = the model's pick is ahead; can be negative if your preferred player is
+  // actually scoring higher, in which case there's no real tradeoff at all.
+  const confidenceDeltaPct =
+    modelScore !== 0 ? Math.round(((modelScore - preferredScore) / Math.abs(modelScore)) * 100) : 0;
+
+  const message =
+    confidenceDeltaPct <= 0
+      ? `Your stated preference, ${preferenceMatch.pref.playerName}, actually scores as well or better than the model's top pick right now (${modelTopPick.player.name}) — no real data tradeoff to accepting your preference here.`
+      : `The model's top pick is ${modelTopPick.player.name} (${modelTopPick.scoreResult.score.toFixed(1)} VORP). ` +
+        `Your stated preference is ${preferenceMatch.pref.playerName} (${preferredEntry.scoreResult.score.toFixed(1)} VORP) — ` +
+        `taking your preference over the model's pick costs roughly ${confidenceDeltaPct}% of this pick's value by our current numbers. ` +
+        `Your call — overriding won't change how future picks get evaluated.`;
+
+  return {
+    aligned: false,
+    modelPick: modelTopPick,
+    preferredPick: preferredEntry,
+    confidenceDeltaPct,
+    message,
+  };
 }
 
 /**
- * Called after the user overrides the model's pick. Must NOT simply re-run the same
- * scoring with the overridden player removed — it should acknowledge the accepted
- * choice and re-optimize everything downstream (roster needs shift, tier cliffs move,
- * etc.) so the user still gets the best available path forward.
+ * Called after the user overrides (or accepts) a pick. By design there is nothing
+ * special to "recalculate" here beyond recording the pick — draft-state.js already
+ * derives availability/roster-needs fresh from `picks` on every read, so the very
+ * next recommendation is automatically computed from the real post-pick board. That
+ * IS the "don't punish the override" guarantee: there's no separate penalty state to
+ * carry forward, because none exists. This function exists mainly so the intent is
+ * explicit and documented, not implicit.
  */
-export function recalculateAfterOverride(board, context, acceptedPlayer) {
-  throw new Error("recalculateAfterOverride() is not implemented yet — see shared/preference-engine.js");
+export function acknowledgeOverride(acceptedPlayerName) {
+  return `Locked in ${acceptedPlayerName}. Recommendations from here are computed fresh from the actual remaining board — nothing about this pick reduces future confidence.`;
 }

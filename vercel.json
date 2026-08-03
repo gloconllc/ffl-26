@@ -6,6 +6,7 @@
     }
   },
   "rewrites": [
-    { "source": "/", "destination": "/draft-app/draft-app.html" }
+    { "source": "/", "destination": "/draft-app/draft-app.html" },
+    { "source": "/callback", "destination": "/draft-app/draft-app.html" }
   ]
 }
