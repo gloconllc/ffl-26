@@ -988,6 +988,21 @@ function main() {
   );
 
   document.getElementById("setup-reset-btn").addEventListener("click", safe(resetDraft, "reset draft"));
+  // Mid-draft reset, visible right on the board itself (the setup-card's reset button
+  // is hidden once a draft is active — see refreshSetupVisibility). Confirms first:
+  // this wipes every recorded pick with no undo, so a misclick during a live draft
+  // must not be able to nuke it silently.
+  const boardResetBtn = document.getElementById("board-reset-btn");
+  if (boardResetBtn) {
+    boardResetBtn.addEventListener(
+      "click",
+      safe(() => {
+        if (window.confirm("Reset this draft? This clears every recorded pick and cannot be undone.")) {
+          resetDraft();
+        }
+      }, "reset draft (board)")
+    );
+  }
   document.getElementById("position-filter").addEventListener("change", safe(renderAvailablePlayers, "filter players"));
   document.getElementById("live-sync-btn").addEventListener("click", safe(handleLiveSync, "live sync"));
 
