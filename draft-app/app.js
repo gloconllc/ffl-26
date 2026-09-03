@@ -17,13 +17,67 @@ import {
   recordPick,
 } from "../shared/draft-state.js";
 import { pickForOpponent, simulateUntilMyTurn } from "../shared/mock-draft.js";
-import { scorePlayer, DEFAULT_TIER_WEIGHTS } from "../shared/scoring-engine.js";
+import { scorePlayer, buildScoringCaches, DEFAULT_TIER_WEIGHTS } from "../shared/scoring-engine.js";
 import { getPreferences, findMatchingPreference } from "../shared/preferences.js";
 import { applyPreferenceLayer, acknowledgeOverride } from "../shared/preference-engine.js";
 
 const WEIGHTS_KEY = "tier_weights";
 const STRATEGY_KEY = "strategy_preset"; // "recommended" | "brain" | "custom"
 const NEED_SLIDER_KEY = "need_awareness_slider"; // 0-100, only meaningful in "custom"
+
+// --- Error boundary --------------------------------------------------------------
+// Non-negotiable requirement (user, draft night): the app must never crash, blank,
+// or freeze silently. Every entry point below (event handlers, the boot sequence,
+// and anything Chart.js/browser APIs throw asynchronously) funnels through here so a
+// real error always surfaces as a small dismissible banner instead of a dead page.
+function showErrorBanner(label, err) {
+  const banner = document.getElementById("error-banner");
+  const text = document.getElementById("error-banner-text");
+  if (!banner || !text) {
+    // Absolute last resort if the banner itself isn't in the DOM for some reason.
+    console.error(`[${label}]`, err);
+    return;
+  }
+  const message = err && err.message ? err.message : String(err);
+  text.textContent = `Something went wrong (${label}): ${message} — the rest of the app should still work. Try the action again, or refresh if it repeats.`;
+  banner.hidden = false;
+  try {
+    logDebug(`Error boundary caught (${label})`, { message, stack: err && err.stack });
+  } catch {
+    // logDebug itself failing must never re-throw and hide the banner we just set.
+  }
+}
+
+/** Wrap any event-handler function so a thrown error (sync or from a returned
+ * promise) shows the banner instead of silently dying and leaving the UI stuck. */
+function safe(fn, label) {
+  return function safeWrapped(...args) {
+    try {
+      const result = fn.apply(this, args);
+      if (result && typeof result.catch === "function") {
+        result.catch((err) => showErrorBanner(label, err));
+      }
+      return result;
+    } catch (err) {
+      showErrorBanner(label, err);
+      return undefined;
+    }
+  };
+}
+
+/** Disables a button and shows a spinner for the duration of `fn` (sync or async) —
+ * so a click always visibly registers immediately, never "did that do anything?" */
+async function withBusy(btn, fn) {
+  if (!btn) return fn();
+  btn.classList.add("is-busy");
+  btn.disabled = true;
+  try {
+    return await fn();
+  } finally {
+    btn.classList.remove("is-busy");
+    btn.disabled = false;
+  }
+}
 
 // --- Strategy preset (Settings: "you chose" / "the brain" / "custom") --------------
 // The one axis that genuinely reorders recommendations today: with a single scoring
@@ -32,16 +86,20 @@ const NEED_SLIDER_KEY = "need_awareness_slider"; // 0-100, only meaningful in "c
 // roster need outranks pure score — is real and testable, so it's what these three
 // presets actually control until Efficiency/Contextual/Risk exist.
 function getStrategyPreset() {
-  return loadJSON(STRATEGY_KEY, "recommended");
+  const preset = loadJSON(STRATEGY_KEY, "recommended");
+  return ["recommended", "brain", "custom"].includes(preset) ? preset : "recommended";
 }
 function setStrategyPreset(preset) {
   saveJSON(STRATEGY_KEY, preset);
 }
 function getNeedAwarenessSlider() {
-  return loadJSON(NEED_SLIDER_KEY, 100);
+  const raw = loadJSON(NEED_SLIDER_KEY, 100);
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100;
 }
 function setNeedAwarenessSlider(value) {
-  saveJSON(NEED_SLIDER_KEY, value);
+  const n = Number(value);
+  saveJSON(NEED_SLIDER_KEY, Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100);
 }
 /** Effective 0..1 blend factor for the current preset. 1 = needs always outrank pure
  * score (today's original behavior). 0 = pure score, needs ignored entirely — "the
@@ -95,12 +153,15 @@ function initTheme() {
 function initTabs() {
   const tabButtons = document.querySelectorAll(".tab-btn");
   tabButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      tabButtons.forEach((b) => b.classList.remove("is-active"));
-      document.querySelectorAll(".panel").forEach((p) => p.classList.remove("is-active"));
-      btn.classList.add("is-active");
-      document.getElementById(`panel-${btn.dataset.panel}`).classList.add("is-active");
-    });
+    btn.addEventListener(
+      "click",
+      safe(() => {
+        tabButtons.forEach((b) => b.classList.remove("is-active"));
+        document.querySelectorAll(".panel").forEach((p) => p.classList.remove("is-active"));
+        btn.classList.add("is-active");
+        document.getElementById(`panel-${btn.dataset.panel}`).classList.add("is-active");
+      }, "switch tab")
+    );
   });
 }
 
@@ -131,15 +192,23 @@ async function initYahoo() {
     yahooAuth.isConnected() ? "status-connected" : "status-pending"
   );
 
-  document.getElementById("yahoo-connect-btn").addEventListener("click", async () => {
-    if (!YAHOO_CLIENT_ID) {
-      logDebug("Yahoo connect blocked", "No client ID configured — see shared/config.js");
-      setYahooStatus("Missing client ID (see debug output)", "status-error");
-      return;
-    }
-    const url = await yahooAuth.buildAuthUrl(YAHOO_CLIENT_ID);
-    location.href = url;
-  });
+  const yahooBtn = document.getElementById("yahoo-connect-btn");
+  yahooBtn.addEventListener(
+    "click",
+    safe(
+      () =>
+        withBusy(yahooBtn, async () => {
+          if (!YAHOO_CLIENT_ID) {
+            logDebug("Yahoo connect blocked", "No client ID configured — see shared/config.js");
+            setYahooStatus("Missing client ID (see debug output)", "status-error");
+            return;
+          }
+          const url = await yahooAuth.buildAuthUrl(YAHOO_CLIENT_ID);
+          location.href = url;
+        }),
+      "connect Yahoo"
+    )
+  );
 }
 
 // --- ESPN connect --------------------------------------------------------------
@@ -233,13 +302,17 @@ function initSettings() {
   };
   for (const [key, el] of Object.entries(sliders)) {
     el.value = Math.round((weights[key] ?? 0) * 100);
-    el.addEventListener("input", () => {
-      const current = getWeights();
-      current[key] = Number(el.value) / 100;
-      saveJSON(WEIGHTS_KEY, current);
-      renderAvailablePlayers();
-      renderRecommendation();
-    });
+    el.addEventListener(
+      "input",
+      safe(() => {
+        const current = getWeights();
+        current[key] = Number(el.value) / 100;
+        saveJSON(WEIGHTS_KEY, current);
+        renderAvailablePlayers();
+        renderRecommendation();
+        renderBoardRecommendation();
+      }, "adjust tier weight")
+    );
   }
 
   // Strategy preset — two selects (Settings tab + the inline quick-pick on the
@@ -247,6 +320,7 @@ function initSettings() {
   const presetEls = [
     document.getElementById("strategy-preset"),
     document.getElementById("strategy-preset-inline"),
+    document.getElementById("strategy-preset-board"),
   ];
   const needSlider = document.getElementById("need-awareness");
 
@@ -263,19 +337,25 @@ function initSettings() {
 
   presetEls.forEach((el) => {
     if (!el) return;
-    el.addEventListener("change", () => {
-      setStrategyPreset(el.value);
-      syncStrategyUI();
-      renderAvailablePlayers();
-      renderRecommendation();
-    });
+    el.addEventListener(
+      "change",
+      safe(() => {
+        setStrategyPreset(el.value);
+        syncStrategyUI();
+        renderAvailablePlayers();
+        renderRecommendation();
+      }, "switch strategy")
+    );
   });
   if (needSlider) {
-    needSlider.addEventListener("input", () => {
-      setNeedAwarenessSlider(Number(needSlider.value));
-      syncStrategyUI();
-      renderRecommendation();
-    });
+    needSlider.addEventListener(
+      "input",
+      safe(() => {
+        setNeedAwarenessSlider(Number(needSlider.value));
+        syncStrategyUI();
+        renderRecommendation();
+      }, "adjust needs-awareness slider")
+    );
   }
   syncStrategyUI();
 }
@@ -310,6 +390,7 @@ async function startDraft() {
 
 function resetDraft() {
   clearDraftState();
+  clearScoredAvailableCache();
   refreshSetupVisibility();
   renderAll();
 }
@@ -343,23 +424,46 @@ function renderBoard() {
 }
 
 // --- Rendering: Available Players ------------------------------------------------
+// PERFORMANCE-CRITICAL (see shared/scoring-engine.js's buildScoringCaches doc
+// comment): the replacement-level/tier/VORP-pool passes are each O(n log n) over the
+// ~800-player real pool. Compute them ONCE per ranking pass here and reuse them for
+// every player, instead of letting scorePlayer recompute them per player — the
+// earlier version of this function did the latter, which is what was actually
+// hanging/crashing the app on the real dataset (confirmed via headless-browser
+// repro, 2026-09-03). Also memoized per render cycle (see renderAll/clearScoreCache)
+// since three separate panels (Available Players, Recommendation, Board sidebar) all
+// need the same ranking on every render — no reason to compute it three times over.
+let scoredAvailableCache = null; // { key, result }
+function scoredAvailableCacheKey(state) {
+  return `${state.picks.length}:${JSON.stringify(getWeights())}`;
+}
+function clearScoredAvailableCache() {
+  scoredAvailableCache = null;
+}
 function scoredAvailable(state) {
+  const key = scoredAvailableCacheKey(state);
+  if (scoredAvailableCache && scoredAvailableCache.key === key) return scoredAvailableCache.result;
+
   const available = getAvailablePlayers(state);
   const weights = getWeights();
   const leagueSettings = {
     numTeams: state.numTeams,
     startersPerTeamByPosition: { QB: 1, RB: 2.5, WR: 2.5, TE: 1, K: 1, DEF: 1 },
   };
-  return available
+  const caches = buildScoringCaches(available, leagueSettings);
+  const result = available
     .map((p) => ({
       player: p,
       scoreResult: scorePlayer(
         p,
-        { allPlayersAtPosition: available, leagueSettings, teamContext: cachedTeamContext || {} },
+        { allPlayersAtPosition: available, leagueSettings, teamContext: cachedTeamContext || {}, ...caches },
         weights
       ),
     }))
     .sort((a, b) => b.scoreResult.score - a.scoreResult.score);
+
+  scoredAvailableCache = { key, result };
+  return result;
 }
 
 function playerAvatarHtml(player) {
@@ -447,9 +551,7 @@ function renderAvailablePlayers() {
     tbody.appendChild(tr);
   }
 
-  tbody.querySelectorAll(".btn-draft").forEach((btn) => {
-    btn.addEventListener("click", () => draftPlayer(btn.dataset.player));
-  });
+  wireDraftButtons(tbody);
 }
 
 function draftPlayer(providerPlayerId) {
@@ -478,22 +580,17 @@ function renderTierBars(tierBreakdown) {
 }
 
 // --- Rendering: Recommendation ----------------------------------------------------
-function renderRecommendation() {
-  const container = document.getElementById("recommendation-content");
-  const prefContainer = document.getElementById("preference-layer-content");
+/** All the ranking/compare logic, shared between the full Recommendation tab and the
+ * compact live sidebar on the Draft Board tab — both must always agree, since showing
+ * two different "top picks" at once would be worse than showing just one. Returns
+ * null when there's nothing to rank (no draft, or not my pick). */
+function computeRecommendationView() {
   const state = getDraftState();
-  if (!state) {
-    container.innerHTML = `<p class="hint">Start a draft on the Draft Board tab first.</p>`;
-    if (prefContainer) prefContainer.innerHTML = "";
-    return;
-  }
-
+  if (!state) return { status: "no-draft" };
   if (!isMyPick(state)) {
     const pickNum = currentPickNumber(state);
     const { teamSlot, round } = teamSlotForPick(pickNum, state.numTeams);
-    container.innerHTML = `<p class="hint">Waiting — pick ${pickNum} (round ${round}) belongs to Team ${teamSlot}. Use "Simulate to my turn" on the Draft Board tab in practice mode.</p>`;
-    if (prefContainer) prefContainer.innerHTML = "";
-    return;
+    return { status: "not-my-turn", pickNum, teamSlot, round };
   }
 
   const needs = getRosterNeeds(state, state.myTeamSlot);
@@ -504,11 +601,63 @@ function renderRecommendation() {
   const needAwareness = effectiveNeedAwareness();
   const ranked = sortByStrategy(scored, neededPositions, needAwareness);
 
+  const recommendedTop = sortByStrategy(scored, neededPositions, 1)[0];
+  const brainTop = sortByStrategy(scored, neededPositions, 0)[0];
+
+  return { status: "ready", preset, ranked, recommendedTop, brainTop };
+}
+
+function recCardHtml(player, scoreResult, rank) {
+  const isCliffLine = (r) => r.includes("left in this tier");
+  const cliffLine = scoreResult.reasoning.find(isCliffLine);
+  const reasoningItems = scoreResult.reasoning
+    .filter((r) => !isCliffLine(r))
+    .map((r) => `<li>${r}</li>`)
+    .join("");
+  const cliff = cliffLine ? `<li class="cliff-warning">⚠ ${cliffLine}</li>` : "";
+  const tierBars = scoreResult.tierBreakdown ? renderTierBars(scoreResult.tierBreakdown) : "";
+  return `
+    <div class="rec-card rank-${rank}">
+      <h4>#${rank} ${player.name} <span class="pos-badge pos-${player.position}">${player.position}</span> — ${player.team}</h4>
+      ${tierBars}
+      <ul>${reasoningItems}${cliff}</ul>
+      <button class="btn btn-primary btn-draft" data-player="${player.providerPlayerId}">Draft this player</button>
+    </div>
+  `;
+}
+
+function wireDraftButtons(container) {
+  container.querySelectorAll(".btn-draft").forEach((btn) => {
+    btn.addEventListener(
+      "click",
+      safe(() => withBusy(btn, () => draftPlayer(btn.dataset.player)), "draft player")
+    );
+  });
+}
+
+function renderRecommendation() {
+  const container = document.getElementById("recommendation-content");
+  const prefContainer = document.getElementById("preference-layer-content");
+  if (!container) return;
+
+  const view = computeRecommendationView();
+
+  if (view.status === "no-draft") {
+    container.innerHTML = `<p class="hint">Start a draft on the Draft Board tab first.</p>`;
+    if (prefContainer) prefContainer.innerHTML = "";
+    return;
+  }
+  if (view.status === "not-my-turn") {
+    container.innerHTML = `<p class="hint">Waiting — pick ${view.pickNum} (round ${view.round}) belongs to Team ${view.teamSlot}. Use "Simulate to my turn" on the Draft Board tab in practice mode.</p>`;
+    if (prefContainer) prefContainer.innerHTML = "";
+    return;
+  }
+
+  const { preset, ranked, recommendedTop, brainTop } = view;
+
   // Show the honest delta between "Recommended" and "The Brain" whenever they'd
   // actually pick differently right now — this is the whole point of the preset
   // selector: see the difference before you commit to a pick, not after.
-  const recommendedTop = sortByStrategy(scored, neededPositions, 1)[0];
-  const brainTop = sortByStrategy(scored, neededPositions, 0)[0];
   let modeCompareHtml = "";
   if (recommendedTop && brainTop && recommendedTop.player.providerPlayerId !== brainTop.player.providerPlayerId) {
     modeCompareHtml = `
@@ -521,33 +670,37 @@ function renderRecommendation() {
 
   const top3 = ranked.slice(0, 3);
   container.innerHTML =
-    modeCompareHtml +
-    top3
-      .map(({ player, scoreResult }, i) => {
-        const isCliffLine = (r) => r.includes("left in this tier");
-        const cliffLine = scoreResult.reasoning.find(isCliffLine);
-        const reasoningItems = scoreResult.reasoning
-          .filter((r) => !isCliffLine(r))
-          .map((r) => `<li>${r}</li>`)
-          .join("");
-        const cliff = cliffLine ? `<li class="cliff-warning">⚠ ${cliffLine}</li>` : "";
-        const tierBars = scoreResult.tierBreakdown ? renderTierBars(scoreResult.tierBreakdown) : "";
-        return `
-          <div class="rec-card rank-${i + 1}">
-            <h4>#${i + 1} ${player.name} <span class="pos-badge pos-${player.position}">${player.position}</span> — ${player.team}</h4>
-            ${tierBars}
-            <ul>${reasoningItems}${cliff}</ul>
-            <button class="btn btn-primary btn-draft" data-player="${player.providerPlayerId}">Draft this player</button>
-          </div>
-        `;
-      })
-      .join("");
+    modeCompareHtml + top3.map(({ player, scoreResult }, i) => recCardHtml(player, scoreResult, i + 1)).join("");
 
-  container.querySelectorAll(".btn-draft").forEach((btn) => {
-    btn.addEventListener("click", () => draftPlayer(btn.dataset.player));
-  });
-
+  wireDraftButtons(container);
   renderPreferenceLayer(ranked);
+}
+
+/** Compact version of the same recommendation, rendered into the Draft Board tab's
+ * sidebar so the board and the recommendation are visible at the same time — no tab
+ * switching mid-pick. Always reflects the exact same ranking as the full tab. */
+function renderBoardRecommendation() {
+  const container = document.getElementById("board-rec-content");
+  if (!container) return;
+
+  const view = computeRecommendationView();
+
+  if (view.status === "no-draft") {
+    container.innerHTML = `<p class="hint">Start a draft to see live recommendations here.</p>`;
+    return;
+  }
+  if (view.status === "not-my-turn") {
+    container.innerHTML = `<p class="hint">Waiting on Team ${view.teamSlot} (pick ${view.pickNum}, round ${view.round}).</p>`;
+    return;
+  }
+
+  const top = view.ranked[0];
+  if (!top) {
+    container.innerHTML = `<p class="hint">No players left to rank.</p>`;
+    return;
+  }
+  container.innerHTML = recCardHtml(top.player, top.scoreResult, 1);
+  wireDraftButtons(container);
 }
 
 // --- Rendering: Personal preference layer ------------------------------------------
@@ -592,14 +745,17 @@ function renderPreferenceLayer(ranked) {
     </div>
   `;
 
-  container.querySelectorAll(".btn-draft").forEach((btn) => {
-    btn.addEventListener("click", () => draftPlayer(btn.dataset.player));
-  });
+  wireDraftButtons(container);
   container.querySelectorAll(".btn-draft-override").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      logDebug("Preference override", acknowledgeOverride(btn.dataset.name));
-      draftPlayer(btn.dataset.player);
-    });
+    btn.addEventListener(
+      "click",
+      safe(() =>
+        withBusy(btn, () => {
+          logDebug("Preference override", acknowledgeOverride(btn.dataset.name));
+          draftPlayer(btn.dataset.player);
+        })
+      , "override preference")
+    );
   });
 }
 
@@ -667,11 +823,24 @@ function renderRoster() {
   `;
 }
 
+/** Run each render function independently — a bug in one panel's rendering must
+ * never blank out the others (or the whole page). Each failure surfaces via the
+ * error banner and that one section is left showing its last-good content. */
 function renderAll() {
-  renderBoard();
-  renderAvailablePlayers();
-  renderRecommendation();
-  renderRoster();
+  const sections = [
+    ["draft board", renderBoard],
+    ["available players", renderAvailablePlayers],
+    ["recommendation", renderRecommendation],
+    ["live board recommendation", renderBoardRecommendation],
+    ["roster", renderRoster],
+  ];
+  for (const [label, fn] of sections) {
+    try {
+      fn();
+    } catch (err) {
+      showErrorBanner(`rendering ${label}`, err);
+    }
+  }
 }
 
 // --- Live sync (see shared/live-sync.js — real structure, unverified against a real
@@ -686,30 +855,69 @@ async function handleLiveSync() {
 
 // --- Boot ------------------------------------------------------------------------
 function main() {
+  // Last-resort catch-all: anything that throws outside our own try/catches (a
+  // browser API, a CDN script like Chart.js, a timer callback) still surfaces here
+  // instead of leaving the page looking frozen with no explanation.
+  window.addEventListener("error", (event) => {
+    showErrorBanner("unexpected error", event.error || event.message);
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    showErrorBanner("unexpected error", event.reason);
+  });
+
+  const dismissBtn = document.getElementById("error-banner-dismiss");
+  if (dismissBtn) {
+    dismissBtn.addEventListener("click", () => {
+      document.getElementById("error-banner").hidden = true;
+    });
+  }
+
   initTheme();
   initTabs();
   initYahoo();
   initSettings();
-  document.getElementById("espn-check-btn").addEventListener("click", checkEspn);
-  document.getElementById("setup-start-btn").addEventListener("click", () => {
-    startDraft().catch((err) => logDebug("Failed to start draft", String(err)));
-  });
-  document.getElementById("setup-reset-btn").addEventListener("click", resetDraft);
-  document.getElementById("position-filter").addEventListener("change", renderAvailablePlayers);
-  document.getElementById("live-sync-btn").addEventListener("click", handleLiveSync);
-  document.getElementById("simulate-btn").addEventListener("click", () => {
-    const state = getDraftState();
-    if (!state) return;
-    simulateUntilMyTurn(state, isMyPick);
-    renderAll();
-  });
+
+  const espnBtn = document.getElementById("espn-check-btn");
+  espnBtn.addEventListener("click", safe(() => withBusy(espnBtn, checkEspn), "check ESPN connection"));
+
+  const startBtn = document.getElementById("setup-start-btn");
+  startBtn.addEventListener(
+    "click",
+    safe(() => withBusy(startBtn, startDraft), "start draft")
+  );
+
+  document.getElementById("setup-reset-btn").addEventListener("click", safe(resetDraft, "reset draft"));
+  document.getElementById("position-filter").addEventListener("change", safe(renderAvailablePlayers, "filter players"));
+  document.getElementById("live-sync-btn").addEventListener("click", safe(handleLiveSync, "live sync"));
+
+  const simulateBtn = document.getElementById("simulate-btn");
+  simulateBtn.addEventListener(
+    "click",
+    safe(
+      () =>
+        withBusy(simulateBtn, async () => {
+          const state = getDraftState();
+          if (!state) return;
+          // Yield one frame first so the button's busy state actually paints before
+          // the (synchronous, can take a moment with many mock picks) simulation runs.
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          simulateUntilMyTurn(state, isMyPick);
+          renderAll();
+        }),
+      "simulate to my turn"
+    )
+  );
 
   refreshSetupVisibility();
   renderAll();
   loadPlayers()
     .then(updateDataSourceBanner)
-    .catch((err) => logDebug("Player data load failed", String(err)));
+    .catch((err) => showErrorBanner("loading player data", err));
   logDebug("App booted", { leagues: LEAGUES });
 }
 
-main();
+try {
+  main();
+} catch (err) {
+  showErrorBanner("app startup", err);
+}

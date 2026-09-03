@@ -34,12 +34,22 @@ export const DEFAULT_TIER_WEIGHTS = {
  * @param {{position: string, projectedPoints: number, providerPlayerId: string}} player
  * @param {Array} allPlayersAtPosition - full pool for that position, for tiering/VORP
  * @param {{numTeams: number, startersPerTeamByPosition: Record<string, number>}} leagueSettings
+ * @param {{replacementLevels?: Record<string,number>, tiersByPosition?: Map}} [precomputed] -
+ *   PERFORMANCE-CRITICAL: both of these are O(n log n) passes over the whole player
+ *   pool. Pass them in already computed once per ranking pass (see scorePlayer/
+ *   draft-app/app.js's scoredAvailable) rather than letting this recompute them for
+ *   every single player — recomputing per-player turns one draft-board render into
+ *   roughly n^2 log n work, which is what was actually hanging/crashing the app on
+ *   the real ~800-player dataset (confirmed via headless-browser repro, 2026-09-03).
  * @returns {{score: number, vorp: number, tier: number, remainingInTier: number, reasoning: string[]}}
  */
-export function scoreProjectionsTier(player, allPlayersAtPosition, leagueSettings) {
-  const replacementLevels = computeReplacementLevels(allPlayersAtPosition, leagueSettings);
+export function scoreProjectionsTier(player, allPlayersAtPosition, leagueSettings, precomputed = {}) {
+  const replacementLevels =
+    precomputed.replacementLevels || computeReplacementLevels(allPlayersAtPosition, leagueSettings);
   const vorp = computeVORP(player, replacementLevels);
-  const tiers = computeTiers(allPlayersAtPosition.filter((p) => p.position === player.position));
+  const tiers =
+    precomputed.tiersByPosition?.get(player.position) ||
+    computeTiers(allPlayersAtPosition.filter((p) => p.position === player.position));
   const tierEntry = tiers.find((t) =>
     t.players.some((p) => p.providerPlayerId === player.providerPlayerId)
   );
@@ -236,19 +246,29 @@ export function scoreContextualTier(player, teamContext) {
  * three, rather than raw VORP dominating the sum by magnitude alone.
  *
  * @param {object} player
- * @param {object} context - { allPlayersAtPosition, leagueSettings, teamContext }
+ * @param {object} context - { allPlayersAtPosition, leagueSettings, teamContext,
+ *   replacementLevels?, tiersByPosition?, vorpPoolByPosition? } — the three optional
+ *   fields are PERFORMANCE-CRITICAL precomputed-once caches (see
+ *   buildScoringCaches()); scorePlayer still works without them (falls back to
+ *   computing fresh) but will be extremely slow if called in a loop over hundreds of
+ *   players without them — see scoreProjectionsTier's doc comment for why.
  * @param {object} weights - see DEFAULT_TIER_WEIGHTS; user-adjustable via settings.
  * @returns {{score:number, tierBreakdown:object, reasoning:string[], riskFlags:string[], vorp:number, tier:number|null, remainingInTier:number|null}}
  */
 export function scorePlayer(player, context, weights = DEFAULT_TIER_WEIGHTS) {
   const { allPlayersAtPosition, leagueSettings, teamContext } = context;
 
-  const projections = scoreProjectionsTier(player, allPlayersAtPosition, leagueSettings);
+  const replacementLevels =
+    context.replacementLevels || computeReplacementLevels(allPlayersAtPosition, leagueSettings);
+  const projections = scoreProjectionsTier(player, allPlayersAtPosition, leagueSettings, {
+    replacementLevels,
+    tiersByPosition: context.tiersByPosition,
+  });
   // Percentile the raw VORP (not just projectedPoints) within position so ties near
   // replacement level don't get inflated.
-  const vorpPoolForPercentile = allPlayersAtPosition
-    .filter((p) => p.position === player.position)
-    .map((p) => computeVORP(p, computeReplacementLevels(allPlayersAtPosition, leagueSettings)));
+  const vorpPoolForPercentile =
+    context.vorpPoolByPosition?.get(player.position) ||
+    allPlayersAtPosition.filter((p) => p.position === player.position).map((p) => computeVORP(p, replacementLevels));
   const projectionsScore = percentileRank(projections.vorp, vorpPoolForPercentile);
 
   const efficiency = scoreEfficiencyTier(player, allPlayersAtPosition);
@@ -292,6 +312,36 @@ export function scorePlayer(player, context, weights = DEFAULT_TIER_WEIGHTS) {
 }
 
 /**
+ * Computes the three position-indexed caches scorePlayer() needs, ONE TIME for a
+ * whole ranking pass, instead of once per player scored. This is the fix for the
+ * n^2-log-n blowup described in scoreProjectionsTier's doc comment — call this once
+ * per render/ranking pass and pass the result as part of `context` to every
+ * scorePlayer() call in that pass (see draft-app/app.js's scoredAvailable()).
+ *
+ * @param {Array} allPlayersAtPosition - full available/board pool
+ * @param {{numTeams:number, startersPerTeamByPosition:Record<string,number>}} leagueSettings
+ * @returns {{replacementLevels:Record<string,number>, tiersByPosition:Map, vorpPoolByPosition:Map}}
+ */
+export function buildScoringCaches(allPlayersAtPosition, leagueSettings) {
+  const replacementLevels = computeReplacementLevels(allPlayersAtPosition, leagueSettings);
+
+  const byPosition = new Map();
+  for (const p of allPlayersAtPosition) {
+    if (!byPosition.has(p.position)) byPosition.set(p.position, []);
+    byPosition.get(p.position).push(p);
+  }
+
+  const tiersByPosition = new Map();
+  const vorpPoolByPosition = new Map();
+  for (const [position, pool] of byPosition.entries()) {
+    tiersByPosition.set(position, computeTiers(pool));
+    vorpPoolByPosition.set(position, pool.map((p) => computeVORP(p, replacementLevels)));
+  }
+
+  return { replacementLevels, tiersByPosition, vorpPoolByPosition };
+}
+
+/**
  * Given the full available-player board, return the top N recommendations for the
  * pick on the clock. Respects roster needs by relying on the caller to pass an
  * already-filtered/boosted board when need-awareness matters (see
@@ -299,9 +349,10 @@ export function scorePlayer(player, context, weights = DEFAULT_TIER_WEIGHTS) {
  * not the strategy-preset blending, which is UI-layer logic.
  */
 export function recommendPicks(board, context, weights = DEFAULT_TIER_WEIGHTS, topN = 3) {
+  const caches = buildScoringCaches(board, context.leagueSettings);
   const scored = board.map((player) => ({
     player,
-    scoreResult: scorePlayer(player, { ...context, allPlayersAtPosition: board }, weights),
+    scoreResult: scorePlayer(player, { ...context, ...caches, allPlayersAtPosition: board }, weights),
   }));
   scored.sort((a, b) => b.scoreResult.score - a.scoreResult.score);
   return scored.slice(0, topN);

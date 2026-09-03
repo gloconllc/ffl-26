@@ -95,35 +95,51 @@ body {
 }
 
 .app-shell {
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  gap: 1.5rem;
-  padding: 1.5rem;
+  display: block;
+  padding: 1.25rem 1.5rem 2.5rem;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
 .tab-bar {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  flex-direction: row;
+  gap: 0.4rem;
+  overflow-x: auto;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  background: var(--color-bg);
+  z-index: 20;
+  padding-top: 0.25rem;
 }
 
 .tab-btn {
-  text-align: left;
-  padding: 0.6rem 0.9rem;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background: transparent;
+  text-align: center;
+  white-space: nowrap;
+  padding: 0.55rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
   color: var(--color-text-muted);
   font-family: var(--font-body);
   font-weight: 600;
+  font-size: 0.9rem;
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
 }
 
-.tab-btn.is-active,
 .tab-btn:hover {
-  background: var(--color-surface-raised);
+  transform: translateY(-1px);
   color: var(--color-text);
+}
+
+.tab-btn.is-active {
+  background: var(--color-top-pick);
+  border-color: transparent;
+  color: #04160f;
 }
 
 .panel {
@@ -519,10 +535,112 @@ body {
 
 @media (max-width: 768px) {
   .app-shell {
+    padding: 1rem;
+  }
+}
+
+/* --- Error boundary banner: a real error must always surface here, never a blank
+   or frozen page. Dismissible, sits above everything, never blocks input. ---------- */
+.error-banner[hidden] {
+  display: none;
+}
+
+.error-banner {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: #3a0d16;
+  color: #ffd6dd;
+  border-bottom: 2px solid var(--color-avoid);
+  padding: 0.7rem 1.25rem;
+  font-size: 0.9rem;
+}
+
+.error-banner #error-banner-text {
+  flex: 1;
+  word-break: break-word;
+}
+
+.error-banner .btn {
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #ffd6dd;
+  flex-shrink: 0;
+}
+
+/* --- Busy / loading button state: whenever a button starts async or heavier work,
+   this makes the click visibly register immediately instead of appearing dead. ---- */
+.btn.is-busy {
+  position: relative;
+  color: transparent !important;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+.btn.is-busy::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: currentColor;
+  border-top-color: #04160f;
+  animation: btn-spin 0.7s linear infinite;
+}
+
+.btn-ghost.is-busy::after,
+.btn.is-busy.btn-ghost::after {
+  border-top-color: var(--color-text);
+}
+
+@keyframes btn-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* --- Draft Board + live Recommendation, side by side (explicit request: see both
+   at the same time without switching tabs). Sidebar collapses under the board on
+   narrower screens rather than disappearing. ---------------------------------------- */
+.status-ticker {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 0 0 1rem;
+  flex-wrap: wrap;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.6rem 1.1rem;
+}
+
+.board-layout {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.board-sidebar {
+  position: sticky;
+  top: 4.5rem;
+}
+
+.sidebar-rec-card .rec-card {
+  padding: 0.85rem;
+  margin-bottom: 0;
+}
+
+@media (max-width: 1050px) {
+  .board-layout {
     grid-template-columns: 1fr;
   }
-  .tab-bar {
-    flex-direction: row;
-    overflow-x: auto;
+  .board-sidebar {
+    position: static;
   }
 }

@@ -10,6 +10,11 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 </head>
 <body>
+  <div id="error-banner" class="error-banner" hidden>
+    <span id="error-banner-text"></span>
+    <button id="error-banner-dismiss" class="btn btn-ghost" type="button">Dismiss</button>
+  </div>
+
   <header class="app-header">
     <div>
       <h1 class="brand">FFL<span class="brand-accent">26</span> Command Center</h1>
@@ -78,15 +83,35 @@
       </div>
 
       <div id="board-content" hidden>
-        <div class="board-toolbar">
+        <div class="status-ticker">
           <span id="on-the-clock" class="status status-connected"></span>
           <button id="simulate-btn" class="btn btn-primary" type="button">Simulate to my turn</button>
           <button id="live-sync-btn" class="btn btn-primary" type="button" hidden>Sync live picks</button>
         </div>
-        <table class="data-table" id="picks-table">
-          <thead><tr><th>Pick</th><th>Round</th><th>Team</th><th>Player</th><th>Pos</th></tr></thead>
-          <tbody></tbody>
-        </table>
+
+        <div class="board-layout">
+          <div class="board-main">
+            <table class="data-table" id="picks-table">
+              <thead><tr><th>Pick</th><th>Round</th><th>Team</th><th>Player</th><th>Pos</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <aside class="board-sidebar">
+            <div class="card sidebar-rec-card">
+              <h3>Recommendation <span class="tag">live</span></h3>
+              <div class="form-row">
+                <label for="strategy-preset-board">Mode</label>
+                <select id="strategy-preset-board">
+                  <option value="recommended">Recommended</option>
+                  <option value="brain">The Brain</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <div id="board-rec-content"><p class="hint">Start a draft to see live recommendations here.</p></div>
+            </div>
+          </aside>
+        </div>
       </div>
     </section>
 
