@@ -396,6 +396,7 @@ function initSettings() {
         syncStrategyUI();
         renderAvailablePlayers();
         renderRecommendation();
+        renderBoardRecommendation();
       }, "switch strategy")
     );
   });
