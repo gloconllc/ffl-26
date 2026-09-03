@@ -180,6 +180,57 @@ function setYahooStatus(text, cls) {
   el.className = `status ${cls}`;
 }
 
+/** Yahoo's Fantasy API JSON is deeply and inconsistently nested (numeric-string keys,
+ * arrays-of-arrays) depending on the resource — rather than hardcode one exact path
+ * (fragile, unverified against a real response), walk the whole tree looking for any
+ * object that looks like a team (`name` alongside `team_key`/`team_id`). Works
+ * regardless of exactly how deep Yahoo buries it. */
+function deepFindYahooTeam(node) {
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = deepFindYahooTeam(item);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (node && typeof node === "object") {
+    if (typeof node.name === "string" && ("team_key" in node || "team_id" in node)) {
+      return { name: node.name, teamKey: node.team_key ?? null };
+    }
+    for (const key of Object.keys(node)) {
+      const found = deepFindYahooTeam(node[key]);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/** Confirms the Yahoo connection actually works end-to-end by resolving the user's
+ * own team in the league — not just that the OAuth token exchange succeeded. This is
+ * the first real step toward "know my pick, I'm PQ's Squad": before any live draft
+ * tracking can work, the app has to correctly identify which team is the user's own. */
+async function fetchAndShowMyYahooTeam() {
+  const leagueKey = `nfl.l.${LEAGUES.yahoo.leagueId}`;
+  try {
+    const data = await yahooAuth.callYahoo(
+      `users;use_login=1/games;game_keys=nfl/leagues;league_keys=${leagueKey}/teams`
+    );
+    logDebug("Yahoo 'my teams' raw response", data);
+    const team = deepFindYahooTeam(data);
+    if (team) {
+      setYahooStatus(`Connected — ${team.name}`, "status-connected");
+      logDebug("Yahoo team resolved", team);
+    } else {
+      logDebug(
+        "Yahoo connected, but couldn't find a team in the response",
+        "See the raw response above — the league may not have started/synced rosters yet, or Yahoo's response shape differs from expected. Connection itself is fine."
+      );
+    }
+  } catch (err) {
+    logDebug("Yahoo 'my teams' lookup failed (connection itself still OK)", String(err));
+  }
+}
+
 async function initYahoo() {
   const tokens = await yahooAuth.handleRedirectCallback().catch((err) => {
     logDebug("Yahoo redirect callback error", String(err));
@@ -191,6 +242,7 @@ async function initYahoo() {
     yahooAuth.isConnected() ? "Connected" : "Not connected",
     yahooAuth.isConnected() ? "status-connected" : "status-pending"
   );
+  if (yahooAuth.isConnected()) fetchAndShowMyYahooTeam();
 
   const yahooBtn = document.getElementById("yahoo-connect-btn");
   yahooBtn.addEventListener(
