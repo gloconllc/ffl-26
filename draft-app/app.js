@@ -879,6 +879,10 @@ function main() {
 
   const espnBtn = document.getElementById("espn-check-btn");
   espnBtn.addEventListener("click", safe(() => withBusy(espnBtn, checkEspn), "check ESPN connection"));
+  // Auto-check on load — ESPN's connection uses server-side env-var credentials (not
+  // a per-user login), so there's nothing to wait on the user for; check it the
+  // moment the page opens instead of making them click "Test ESPN Connection" first.
+  checkEspn().catch((err) => showErrorBanner("check ESPN connection", err));
 
   const startBtn = document.getElementById("setup-start-btn");
   startBtn.addEventListener(
