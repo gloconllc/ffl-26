@@ -588,7 +588,16 @@ function renderAvailablePlayers() {
   );
   renderAvailableChart(ranked);
 
+  // Real-time draft-day mode: the Draft button logs whichever team's turn it
+  // currently is (per teamSlotForPick), not only "your" pick. This lets you
+  // click the instant you see a pick happen on Yahoo's/ESPN's own screen —
+  // yours or an opponent's — instead of waiting on live API polling we can't
+  // safely ship untested. recordPick()/teamSlotForPick() already resolve the
+  // correct team from the current pick count, so no auto-detection is needed.
   const mine = isMyPick(state);
+  const pickNum = currentPickNumber(state);
+  const { teamSlot } = teamSlotForPick(pickNum, state.numTeams);
+  const draftBtnLabel = mine ? "Draft (YOU)" : `Draft (Team ${teamSlot})`;
   for (const { player, scoreResult } of ranked.slice(0, 60)) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -598,7 +607,7 @@ function renderAvailablePlayers() {
       <td>Tier ${scoreResult.tier ?? "?"}</td>
       <td class="numeric">${scoreResult.vorp.toFixed(1)}</td>
       <td class="numeric"><strong>${scoreResult.score.toFixed(0)}</strong></td>
-      <td><button class="btn btn-primary btn-draft" data-player="${player.providerPlayerId}" ${mine ? "" : "disabled"}>Draft</button></td>
+      <td><button class="btn ${mine ? "btn-primary" : "btn-ghost"} btn-draft" data-player="${player.providerPlayerId}" title="Logs this pick for whichever team is currently on the clock">${draftBtnLabel}</button></td>
     `;
     tbody.appendChild(tr);
   }
@@ -607,8 +616,12 @@ function renderAvailablePlayers() {
 }
 
 function draftPlayer(providerPlayerId) {
+  // Deliberately no isMyPick() gate: draft-day mode lets you log ANY team's
+  // pick the moment it happens on Yahoo's/ESPN's own site, in real time.
+  // recordPick() below resolves the correct team from the current pick
+  // count regardless of whose turn it is.
   const state = getDraftState();
-  if (!state || !isMyPick(state)) return;
+  if (!state) return;
   recordPick(state, providerPlayerId, "manual");
   renderAll();
 }
