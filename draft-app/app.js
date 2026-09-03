@@ -117,19 +117,43 @@ function strategyDescription(preset) {
     return `Custom: blending needs-awareness at ${getNeedAwarenessSlider()}% (0% = pure Brain, 100% = full Recommended).`;
   return "Recommended: an open roster need always outranks pure score — our default, tuned to build a complete roster.";
 }
+/** Same-team "stacking" downside: rostering multiple players from the same NFL team
+ * correlates their weekly outcomes (one bad game plan drags both down together) and,
+ * when bye weeks match exactly, benches both in the same week with no way to cover it.
+ * Not a hard block — real drafters do sometimes stack on purpose — just a bias, scaled
+ * by the same `needAwareness` factor as positional needs so "The Brain" (pure
+ * best-player-available, explicitly documented as ignoring roster context) stays
+ * exactly that: pure. Returns { amount, note } — amount is a sort-key penalty in the
+ * same units as score, note is a user-facing explanation or null. */
+function stackingPenalty(player, myRoster, needAwareness, maxScore) {
+  if (!needAwareness || !myRoster.length) return { amount: 0, note: null };
+  const teammate = myRoster.find((p) => p.team && p.team === player.team);
+  if (!teammate) return { amount: 0, note: null };
+  const sameBye = Boolean(teammate.byeWeek) && teammate.byeWeek === player.byeWeek;
+  const fraction = sameBye ? 0.35 : 0.15;
+  const note = sameBye
+    ? `Same team AND bye week (${player.byeWeek}) as your ${teammate.name} — you'd lose both in the same week.`
+    : `Also on ${player.team} with your ${teammate.name} on your roster — correlated outcomes, less week-to-week insurance.`;
+  return { amount: needAwareness * fraction * maxScore, note };
+}
+
 /** Sort by score plus a need boost scaled by `needAwareness` (0..1). At 1, any
  * need-filling player's boost (max score in the pool) guarantees it outranks every
  * non-need player — reproducing the original hard "needs first" sort exactly. At 0,
  * boost is zero for everyone, so this is pure score order. In between, it's a genuine
- * blend, not a hack. */
-function sortByStrategy(ranked, neededPositions, needAwareness) {
+ * blend, not a hack. `myRoster` (already-drafted players for this team) is optional —
+ * when provided, same-team stacking is penalized the same way, scaled by the same
+ * needAwareness factor. */
+function sortByStrategy(ranked, neededPositions, needAwareness, myRoster = []) {
   const maxScore = ranked.length ? Math.max(...ranked.map((r) => r.scoreResult.score), 1) : 1;
   return ranked
     .slice()
     .sort((a, b) => {
       const aBoost = neededPositions.has(a.player.position) ? needAwareness * maxScore : 0;
       const bBoost = neededPositions.has(b.player.position) ? needAwareness * maxScore : 0;
-      return b.scoreResult.score + bBoost - (a.scoreResult.score + aBoost);
+      const aStack = stackingPenalty(a.player, myRoster, needAwareness, maxScore).amount;
+      const bStack = stackingPenalty(b.player, myRoster, needAwareness, maxScore).amount;
+      return b.scoreResult.score + bBoost - bStack - (a.scoreResult.score + aBoost - aStack);
     });
 }
 
@@ -662,18 +686,19 @@ function computeRecommendationView() {
   const needs = getRosterNeeds(state, state.myTeamSlot);
   const neededPositions = new Set(needs.flatMap((n) => n.eligiblePositions));
   const scored = scoredAvailable(state);
+  const myRoster = getMyRoster(state);
 
   const preset = getStrategyPreset();
   const needAwareness = effectiveNeedAwareness();
-  const ranked = sortByStrategy(scored, neededPositions, needAwareness);
+  const ranked = sortByStrategy(scored, neededPositions, needAwareness, myRoster);
 
-  const recommendedTop = sortByStrategy(scored, neededPositions, 1)[0];
-  const brainTop = sortByStrategy(scored, neededPositions, 0)[0];
+  const recommendedTop = sortByStrategy(scored, neededPositions, 1, myRoster)[0];
+  const brainTop = sortByStrategy(scored, neededPositions, 0, myRoster)[0];
 
-  return { status: "ready", preset, ranked, recommendedTop, brainTop };
+  return { status: "ready", preset, ranked, recommendedTop, brainTop, myRoster };
 }
 
-function recCardHtml(player, scoreResult, rank) {
+function recCardHtml(player, scoreResult, rank, myRoster = []) {
   const isCliffLine = (r) => r.includes("left in this tier");
   const cliffLine = scoreResult.reasoning.find(isCliffLine);
   const reasoningItems = scoreResult.reasoning
@@ -681,12 +706,17 @@ function recCardHtml(player, scoreResult, rank) {
     .map((r) => `<li>${r}</li>`)
     .join("");
   const cliff = cliffLine ? `<li class="cliff-warning">⚠ ${cliffLine}</li>` : "";
+  // Surface same-team stacking as a plain fact regardless of Mode — only the ranking
+  // itself is mode-dependent (see stackingPenalty/sortByStrategy); the warning below
+  // is informational so you can make the call yourself even under "The Brain".
+  const stackNote = stackingPenalty(player, myRoster, 1, 1).note;
+  const stackWarning = stackNote ? `<li class="cliff-warning">⚠ ${stackNote}</li>` : "";
   const tierBars = scoreResult.tierBreakdown ? renderTierBars(scoreResult.tierBreakdown) : "";
   return `
     <div class="rec-card rank-${rank}">
       <h4>#${rank} ${player.name} <span class="pos-badge pos-${player.position}">${player.position}</span> — ${player.team}</h4>
       ${tierBars}
-      <ul>${reasoningItems}${cliff}</ul>
+      <ul>${reasoningItems}${cliff}${stackWarning}</ul>
       <button class="btn btn-primary btn-draft" data-player="${player.providerPlayerId}">Draft this player</button>
     </div>
   `;
@@ -736,7 +766,8 @@ function renderRecommendation() {
 
   const top3 = ranked.slice(0, 3);
   container.innerHTML =
-    modeCompareHtml + top3.map(({ player, scoreResult }, i) => recCardHtml(player, scoreResult, i + 1)).join("");
+    modeCompareHtml +
+    top3.map(({ player, scoreResult }, i) => recCardHtml(player, scoreResult, i + 1, view.myRoster)).join("");
 
   wireDraftButtons(container);
   renderPreferenceLayer(ranked);
@@ -765,7 +796,7 @@ function renderBoardRecommendation() {
     container.innerHTML = `<p class="hint">No players left to rank.</p>`;
     return;
   }
-  container.innerHTML = recCardHtml(top.player, top.scoreResult, 1);
+  container.innerHTML = recCardHtml(top.player, top.scoreResult, 1, view.myRoster);
   wireDraftButtons(container);
 }
 
