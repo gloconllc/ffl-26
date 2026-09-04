@@ -103,6 +103,11 @@ export function getStoredTokens() {
   return loadJSON(TOKEN_STORAGE_KEY);
 }
 
+/** True only while we hold tokens that are either still usable or refreshable — NOT a
+ * guarantee the connection is still live (a genuinely dead refresh_token is only
+ * discovered on the next actual request), but no longer stays stuck on "Connected"
+ * forever after a refresh has definitively failed, since ensureFreshToken() below now
+ * clears stored tokens the moment that happens. */
 export function isConnected() {
   return Boolean(getStoredTokens()?.access_token);
 }
@@ -129,7 +134,20 @@ export async function ensureFreshToken() {
     }),
   });
   if (!res.ok) {
-    console.error("[yahoo-auth] refresh failed", await res.text().catch(() => ""));
+    const body = await res.text().catch(() => "");
+    console.error("[yahoo-auth] refresh failed", res.status, body);
+    // Previously left the stale tokens in storage on ANY failed refresh, so
+    // isConnected() (which only checks access_token presence) kept reporting
+    // "Connected" indefinitely even once the refresh_token itself was dead/revoked —
+    // the user would only find out by hitting a mysterious failure deeper in the app.
+    // Only clear on a genuine auth rejection (4xx — Yahoo/our proxy actively refusing
+    // the refresh_token), not on a transient 5xx/network hiccup from Yahoo's own token
+    // endpoint or our proxy — we've seen exactly that kind of transient failure this
+    // season with ESPN, and forcing a full Yahoo reconnect over a passing blip would
+    // be a worse outcome than just retrying on the next call.
+    if (res.status >= 400 && res.status < 500) {
+      saveJSON(TOKEN_STORAGE_KEY, null);
+    }
     return null;
   }
   const refreshed = await res.json();

@@ -226,6 +226,21 @@
         <p class="hint">"Recommended" always ranks an open roster need above pure score. "The Brain" ranks purely by score (VORP/tier) and will happily recommend the highest-value player at a position you don't need — that's not a bug, it's the most-points-no-matter-what mode. "Custom" blends the two by the slider above (0 = pure Brain, 100 = full Recommended).</p>
       </div>
 
+      <div class="card" id="preferences-card">
+        <h3>Your player preferences</h3>
+        <p class="hint">Feeds the Recommendation tab's preference layer — it always shows the model's real #1 pick, shows your stated preference if one is still available, and shows the honest cost (or lack of one) of taking it instead. Stating a preference here never changes the model's own number for anyone else; it only surfaces the comparison. Matches by exact player name, so spelling matters.</p>
+        <div class="form-row">
+          <label for="pref-player-name">Player name</label>
+          <input id="pref-player-name" type="text" placeholder="e.g. Lamar Jackson" />
+        </div>
+        <div class="form-row">
+          <label for="pref-note">Why (optional)</label>
+          <input id="pref-note" type="text" placeholder="e.g. Building the roster around him again this year" />
+        </div>
+        <button id="pref-add-btn" class="btn btn-primary" type="button">Add preference</button>
+        <div id="preferences-list" style="margin-top:12px"></div>
+      </div>
+
       <div class="card">
         <h3>Scoring tier weights</h3>
         <div class="slider-row">

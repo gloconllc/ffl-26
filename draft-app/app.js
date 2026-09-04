@@ -14,11 +14,17 @@ import {
   getRosterForSlot,
   getMyRoster,
   getRosterNeeds,
+  computeSlotAllocation,
   recordPick,
 } from "../shared/draft-state.js";
 import { pickForOpponent, simulateUntilMyTurn } from "../shared/mock-draft.js";
 import { scorePlayer, buildScoringCaches, DEFAULT_TIER_WEIGHTS } from "../shared/scoring-engine.js";
-import { getPreferences, findMatchingPreference } from "../shared/preferences.js";
+import {
+  getPreferences,
+  findMatchingPreference,
+  addPlayerPreference,
+  removePlayerPreference,
+} from "../shared/preferences.js";
 import { applyPreferenceLayer, acknowledgeOverride } from "../shared/preference-engine.js";
 import {
   getRosterSource,
@@ -134,9 +140,14 @@ function strategyDescription(preset) {
  * same units as score, note is a user-facing explanation or null. */
 function stackingPenalty(player, myRoster, needAwareness, maxScore) {
   if (!needAwareness || !myRoster.length) return { amount: 0, note: null };
-  const teammate = myRoster.find((p) => p.team && p.team === player.team);
-  if (!teammate) return { amount: 0, note: null };
-  const sameBye = Boolean(teammate.byeWeek) && teammate.byeWeek === player.byeWeek;
+  const teammates = myRoster.filter((p) => p.team && p.team === player.team);
+  if (!teammates.length) return { amount: 0, note: null };
+  // Check every same-team match, not just the first — a bye-week collision with the
+  // 2nd or 3rd teammate on this team is just as real a risk as one with the 1st, and
+  // should take priority over a merely-correlated (different-bye) match if any exists.
+  const byeCollision = teammates.find((p) => Boolean(p.byeWeek) && p.byeWeek === player.byeWeek);
+  const teammate = byeCollision || teammates[0];
+  const sameBye = Boolean(byeCollision);
   const fraction = sameBye ? 0.35 : 0.15;
   const note = sameBye
     ? `Same team AND bye week (${player.byeWeek}) as your ${teammate.name} — you'd lose both in the same week.`
@@ -194,6 +205,20 @@ function initTabs() {
       }, "switch tab")
     );
   });
+}
+
+// --- HTML escaping ------------------------------------------------------------
+// Player names/teams come from our own curated dataset today, but roster-source.js
+// (Yahoo/ESPN sync) means externally-sourced strings can reach these same render
+// paths too — most concretely, ESPN team names (initRosterSource's team picker) are
+// genuinely user-controlled text (any league member can rename their team to
+// anything, including markup) rendered straight into innerHTML. Escape everywhere a
+// dynamic string is interpolated into an HTML template rather than set via
+// textContent, so this can't become a stored-XSS vector as more live data flows in.
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]
+  ));
 }
 
 // --- Debug output helper ------------------------------------------------------
@@ -444,6 +469,94 @@ function initSettings() {
   syncStrategyUI();
 }
 
+// --- Settings: player preferences UI ------------------------------------------
+// The preference layer itself (shared/preferences.js, shared/preference-engine.js)
+// has been real since early in this project, but nothing in the UI ever let you add
+// or remove a stated preference beyond the one hardcoded seed value (Lamar Jackson) —
+// so the whole feature was silently inert for anyone whose plans changed, or for the
+// ESPN league entirely. This wires the already-exported add/remove functions up to an
+// actual form in Settings.
+function renderPreferencesList() {
+  const container = document.getElementById("preferences-list");
+  if (!container) return;
+  const prefs = getPreferences();
+  if (!prefs.playerPreferences.length) {
+    container.innerHTML = `<p class="hint">No player preferences stated yet.</p>`;
+    return;
+  }
+  container.innerHTML = `
+    <table class="data-table">
+      <thead><tr><th>Player</th><th>Note</th><th></th></tr></thead>
+      <tbody>
+        ${prefs.playerPreferences
+          .map(
+            (p) => `
+          <tr>
+            <td>${escapeHtml(p.playerName)}</td>
+            <td>${escapeHtml(p.note || "")}</td>
+            <td><button class="btn btn-ghost btn-pref-remove" data-name="${escapeHtml(p.playerName)}" type="button">Remove</button></td>
+          </tr>`
+          )
+          .join("")}
+      </tbody>
+    </table>
+  `;
+  container.querySelectorAll(".btn-pref-remove").forEach((btn) => {
+    btn.addEventListener(
+      "click",
+      safe(() => {
+        removePlayerPreference(btn.dataset.name);
+        renderPreferencesList();
+        // The Recommendation tab's preference layer reads getPreferences() fresh on
+        // every render, so removing/adding here must refresh it immediately — not
+        // wait for the next unrelated render (e.g. the next pick).
+        renderRecommendation();
+        renderBoardRecommendation();
+      }, "remove player preference")
+    );
+  });
+}
+
+function initPreferencesUI() {
+  renderPreferencesList();
+  const addBtn = document.getElementById("pref-add-btn");
+  const nameInput = document.getElementById("pref-player-name");
+  const noteInput = document.getElementById("pref-note");
+  if (!addBtn || !nameInput) return;
+
+  addBtn.addEventListener(
+    "click",
+    safe(() => {
+      const playerName = nameInput.value.trim();
+      if (!playerName) return;
+      // Soft validation only — warn, don't block. The local dataset is known to be
+      // missing kickers, team defenses, and 2025 rookies entirely (see the Draft
+      // tab's own data-source banner), so a real, intended preference could
+      // legitimately not match yet; refusing to save it would just lose the user's
+      // input for a gap that's on us, not them.
+      const known = cachedPlayers || [];
+      const matchesKnownPlayer = known.some((p) => p.name.toLowerCase() === playerName.toLowerCase());
+      if (!matchesKnownPlayer) {
+        logDebug(
+          "Player preference added without a dataset match",
+          `"${playerName}" doesn't exactly match any player currently loaded — it won't be surfaced on the Recommendation tab until it does (check spelling, or this may be one of the dataset's known gaps: kickers, team defenses, 2025 rookies).`
+        );
+      }
+      addPlayerPreference({
+        playerName,
+        direction: "for",
+        appliesAtPickNumber: null,
+        note: noteInput ? noteInput.value.trim() : "",
+      });
+      nameInput.value = "";
+      if (noteInput) noteInput.value = "";
+      renderPreferencesList();
+      renderRecommendation();
+      renderBoardRecommendation();
+    }, "add player preference")
+  );
+}
+
 // --- Draft setup / lifecycle ---------------------------------------------------
 function refreshSetupVisibility() {
   const state = getDraftState();
@@ -500,8 +613,8 @@ function renderBoard() {
       <td>${pick.pickNumber}</td>
       <td>${pick.round}</td>
       <td>${pick.teamSlot}${pick.teamSlot === state.myTeamSlot ? " (you)" : ""}</td>
-      <td>${player ? player.name : "?"}</td>
-      <td><span class="pos-badge pos-${player ? player.position : ""}">${player ? player.position : "?"}</span></td>
+      <td>${player ? escapeHtml(player.name) : "?"}</td>
+      <td><span class="pos-badge pos-${player ? escapeHtml(player.position) : ""}">${player ? escapeHtml(player.position) : "?"}</span></td>
     `;
     tbody.appendChild(tr);
   }
@@ -551,8 +664,13 @@ function scoredAvailable(state) {
 }
 
 function playerAvatarHtml(player) {
-  if (!player.headshot) return `<span class="avatar avatar-fallback">${player.position}</span>`;
-  return `<img class="avatar" src="${player.headshot}" alt="" loading="lazy" onerror="this.outerHTML='<span class=&quot;avatar avatar-fallback&quot;>${player.position}</span>'" />`;
+  const pos = escapeHtml(player.position);
+  if (!player.headshot) return `<span class="avatar avatar-fallback">${pos}</span>`;
+  // Note the onerror handler is itself a JS string literal embedded in an HTML
+  // attribute — position needs both HTML-escaping (for the outer attribute) and its
+  // own quotes neutralized so it can't break out of the single-quoted JS string.
+  const posForJs = pos.replace(/'/g, "&#39;");
+  return `<img class="avatar" src="${escapeHtml(player.headshot)}" alt="" loading="lazy" onerror="this.outerHTML='<span class=&quot;avatar avatar-fallback&quot;>${posForJs}</span>'" />`;
 }
 
 function injuryBadgeHtml(player) {
@@ -563,7 +681,7 @@ function injuryBadgeHtml(player) {
     : status.includes("doubtful")
       ? "injury-doubtful"
       : "injury-questionable";
-  return `<span class="injury-badge ${cls}" title="${player.injuryNote || ""}">${player.injuryStatus}</span>`;
+  return `<span class="injury-badge ${cls}" title="${escapeHtml(player.injuryNote || "")}">${escapeHtml(player.injuryStatus)}</span>`;
 }
 
 // Chart.js instance, recreated on each render rather than mutated in place — simplest
@@ -633,9 +751,9 @@ function renderAvailablePlayers() {
   for (const { player, scoreResult } of ranked.slice(0, 60)) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td class="player-cell">${playerAvatarHtml(player)}<span>${player.name}</span> ${injuryBadgeHtml(player)}</td>
-      <td><span class="pos-badge pos-${player.position}">${player.position}</span></td>
-      <td>${player.team}${player.byeWeek ? ` <span class="tag">bye ${player.byeWeek}</span>` : ""}</td>
+      <td class="player-cell">${playerAvatarHtml(player)}<span>${escapeHtml(player.name)}</span> ${injuryBadgeHtml(player)}</td>
+      <td><span class="pos-badge pos-${escapeHtml(player.position)}">${escapeHtml(player.position)}</span></td>
+      <td>${escapeHtml(player.team)}${player.byeWeek ? ` <span class="tag">bye ${escapeHtml(player.byeWeek)}</span>` : ""}</td>
       <td>Tier ${scoreResult.tier ?? "?"}</td>
       <td class="numeric">${scoreResult.vorp.toFixed(1)}</td>
       <td class="numeric"><strong>${scoreResult.score.toFixed(0)}</strong></td>
@@ -717,11 +835,11 @@ function recCardHtml(player, scoreResult, rank, myRoster = []) {
   // itself is mode-dependent (see stackingPenalty/sortByStrategy); the warning below
   // is informational so you can make the call yourself even under "The Brain".
   const stackNote = stackingPenalty(player, myRoster, 1, 1).note;
-  const stackWarning = stackNote ? `<li class="cliff-warning">⚠ ${stackNote}</li>` : "";
+  const stackWarning = stackNote ? `<li class="cliff-warning">⚠ ${escapeHtml(stackNote)}</li>` : "";
   const tierBars = scoreResult.tierBreakdown ? renderTierBars(scoreResult.tierBreakdown) : "";
   return `
     <div class="rec-card rank-${rank}">
-      <h4>#${rank} ${player.name} <span class="pos-badge pos-${player.position}">${player.position}</span> — ${player.team}</h4>
+      <h4>#${rank} ${escapeHtml(player.name)} <span class="pos-badge pos-${escapeHtml(player.position)}">${escapeHtml(player.position)}</span> — ${escapeHtml(player.team)}</h4>
       ${tierBars}
       <ul>${reasoningItems}${cliff}${stackWarning}</ul>
       <button class="btn btn-primary btn-draft" data-player="${player.providerPlayerId}">Draft this player</button>
@@ -765,8 +883,8 @@ function renderRecommendation() {
   if (recommendedTop && brainTop && recommendedTop.player.providerPlayerId !== brainTop.player.providerPlayerId) {
     modeCompareHtml = `
       <div class="card">
-        <p class="hint"><strong>Recommended</strong> would take <strong>${recommendedTop.player.name}</strong> (${recommendedTop.player.position}, fills a need) —
-        <strong>The Brain</strong> would take <strong>${brainTop.player.name}</strong> (${brainTop.player.position}, ${brainTop.scoreResult.score.toFixed(1)} VORP, highest pure score regardless of need).
+        <p class="hint"><strong>Recommended</strong> would take <strong>${escapeHtml(recommendedTop.player.name)}</strong> (${escapeHtml(recommendedTop.player.position)}, fills a need) —
+        <strong>The Brain</strong> would take <strong>${escapeHtml(brainTop.player.name)}</strong> (${escapeHtml(brainTop.player.position)}, ${brainTop.scoreResult.score.toFixed(1)} VORP, highest pure score regardless of need).
         You're currently viewing recommendations under <strong>${preset === "recommended" ? "Recommended" : preset === "brain" ? "The Brain" : "Custom"}</strong>.</p>
       </div>`;
   }
@@ -830,20 +948,20 @@ function renderPreferenceLayer(ranked) {
   }
 
   if (result.aligned) {
-    container.innerHTML = `<div class="card"><p class="hint">✓ ${result.message}</p></div>`;
+    container.innerHTML = `<div class="card"><p class="hint">✓ ${escapeHtml(result.message)}</p></div>`;
     return;
   }
 
   container.innerHTML = `
     <div class="card">
       <h3>Your stated preference vs. the model</h3>
-      <p class="hint">${result.message}</p>
+      <p class="hint">${escapeHtml(result.message)}</p>
       <div class="card-row">
         <button class="btn btn-primary btn-draft" data-player="${result.modelPick.player.providerPlayerId}">
-          Take the model's pick — ${result.modelPick.player.name}
+          Take the model's pick — ${escapeHtml(result.modelPick.player.name)}
         </button>
-        <button class="btn btn-ghost btn-draft-override" data-player="${result.preferredPick.player.providerPlayerId}" data-name="${result.preferredPick.player.name}">
-          Override — take ${result.preferredPick.player.name}
+        <button class="btn btn-ghost btn-draft-override" data-player="${result.preferredPick.player.providerPlayerId}" data-name="${escapeHtml(result.preferredPick.player.name)}">
+          Override — take ${escapeHtml(result.preferredPick.player.name)}
         </button>
       </div>
     </div>
@@ -865,29 +983,17 @@ function renderPreferenceLayer(ranked) {
 
 // --- Rendering: My Roster -----------------------------------------------------------
 /** All starting slots (not just open ones) with filled/total counts, for the roster
- * needs progress-bar visualization. Mirrors getRosterNeeds' allocation logic but
- * reports every slot, not just the ones still open. */
-function computeAllSlotStatus(state, teamSlot) {
-  const roster = getRosterForSlot(state, teamSlot);
-  return computeSlotStatusFromRoster(roster, state.rosterSlots);
-}
-
-/** Same slot-fill counting as computeAllSlotStatus, but taking a plain roster array
- * directly instead of reading it off draft-state — this is what makes My Roster/Lineup
- * work from a live Yahoo/ESPN fetch, which has no local draft-state at all. */
+ * needs progress-bar visualization — takes a plain roster array directly (rather than
+ * reading it off draft-state) so this same function works for My Roster/Lineup sourced
+ * from a live Yahoo/ESPN fetch, which has no local draft-state at all. Delegates the
+ * actual allocation to shared/draft-state.js's computeSlotAllocation() — the single
+ * source of truth for slot-fill counting, so this can never drift back out of sync
+ * with getRosterNeeds()'s own allocation (see that function's doc comment for the
+ * double-counting bug this replaced). */
 function computeSlotStatusFromRoster(roster, rosterSlots = DEFAULT_ROSTER_SLOTS) {
-  const counts = {};
-  for (const p of roster) counts[p.position] = (counts[p.position] || 0) + 1;
-
-  return rosterSlots
-    .filter((slotDef) => slotDef.slot !== "BN" && slotDef.slot !== "IR")
-    .map((slotDef) => {
-      const filled = slotDef.eligiblePositions.reduce(
-        (sum, pos) => sum + Math.min(counts[pos] || 0, slotDef.count),
-        0
-      );
-      return { slot: slotDef.slot, count: slotDef.count, filled: Math.min(filled, slotDef.count) };
-    });
+  return computeSlotAllocation(roster, rosterSlots)
+    .filter((a) => a.slot !== "BN" && a.slot !== "IR")
+    .map((a) => ({ slot: a.slot, count: a.count, filled: a.filled }));
 }
 
 function renderNeedsBars(slotStatus) {
@@ -933,7 +1039,7 @@ function renderRoster() {
       const rosterRows = roster
         .map(
           (p) =>
-            `<tr><td class="player-cell">${playerAvatarHtml(p)}<span>${p.name}</span></td><td><span class="pos-badge pos-${p.position}">${p.position}</span></td><td>${p.team}${p.byeWeek ? ` <span class="tag">bye ${p.byeWeek}</span>` : ""}</td></tr>`
+            `<tr><td class="player-cell">${playerAvatarHtml(p)}<span>${escapeHtml(p.name)}</span></td><td><span class="pos-badge pos-${escapeHtml(p.position)}">${escapeHtml(p.position)}</span></td><td>${escapeHtml(p.team)}${p.byeWeek ? ` <span class="tag">bye ${escapeHtml(p.byeWeek)}</span>` : ""}</td></tr>`
         )
         .join("");
 
@@ -966,39 +1072,57 @@ function renderLineup() {
         return;
       }
 
+      // Score against the full league player pool (cachedPlayers) — not just the ~15
+      // players on this roster — so percentile/tier/VORP math (all relative measures)
+      // isn't skewed by a tiny sample. Same pool renderAvailablePlayers() uses. Also
+      // read the real league size off draft-state when one exists, instead of always
+      // assuming 10 teams (which understates VORP replacement level for any other
+      // league size, e.g. this app's own 2 leagues may differ).
+      const state = getDraftState();
+      const pool = cachedPlayers && cachedPlayers.length ? cachedPlayers : roster;
       const leagueSettings = {
-        numTeams: 10,
+        numTeams: state?.numTeams || 10,
         startersPerTeamByPosition: { QB: 1, RB: 2.5, WR: 2.5, TE: 1, K: 1, DEF: 1 },
       };
-      const caches = buildScoringCaches(roster, leagueSettings);
+      const caches = buildScoringCaches(pool, leagueSettings);
       const weights = getWeights();
       const scoredRoster = roster
         .map((player) => ({
           player,
           scoreResult: scorePlayer(
             player,
-            { allPlayersAtPosition: roster, leagueSettings, teamContext: cachedTeamContext || {}, ...caches },
+            { allPlayersAtPosition: pool, leagueSettings, teamContext: cachedTeamContext || {}, ...caches },
             weights
           ),
         }))
         .sort((a, b) => b.scoreResult.score - a.scoreResult.score);
 
-      const usedIds = new Set();
-      const slotSections = DEFAULT_ROSTER_SLOTS.filter((s) => s.slot !== "BN" && s.slot !== "IR").map((slotDef) => {
-        const eligible = scoredRoster.filter(
-          (r) => !usedIds.has(r.player.providerPlayerId) && slotDef.eligiblePositions.includes(r.player.position)
-        );
-        const starters = eligible.slice(0, slotDef.count);
-        starters.forEach((r) => usedIds.add(r.player.providerPlayerId));
-        return { slotDef, starters };
+      // Assign each rostered player to at most one Start slot via the same shared
+      // allocation logic as My Roster's needs bars (computeSlotAllocation) — this
+      // guarantees a correct result regardless of the order roster slots happen to be
+      // declared in, rather than relying on FLEX being listed after RB/WR/TE. Feed it
+      // the players in score-sorted order (highest first) so each slot's allocation
+      // naturally picks its best eligible player(s) first, exactly like the previous
+      // per-slot logic did — computeSlotAllocation itself is order-agnostic on scoring,
+      // it just consumes its input array in the order given.
+      const scoreByPlayerId = new Map(scoredRoster.map((r) => [r.player.providerPlayerId, r]));
+      const playersByScore = scoredRoster.map((r) => r.player);
+      const allocation = computeSlotAllocation(playersByScore, DEFAULT_ROSTER_SLOTS).filter(
+        (a) => a.slot !== "BN" && a.slot !== "IR"
+      );
+      const startedIds = new Set();
+      const slotSections = allocation.map((a) => {
+        const starters = a.players.map((p) => scoreByPlayerId.get(p.providerPlayerId)).filter(Boolean);
+        starters.forEach((r) => startedIds.add(r.player.providerPlayerId));
+        return { slotDef: { slot: a.slot, count: a.count }, starters };
       });
-      const bench = scoredRoster.filter((r) => !usedIds.has(r.player.providerPlayerId));
+      const bench = scoredRoster.filter((r) => !startedIds.has(r.player.providerPlayerId));
 
       const rowHtml = (r, isStarter) => `
           <tr class="${isStarter ? "lineup-start" : "lineup-bench"}">
-            <td class="player-cell">${playerAvatarHtml(r.player)}<span>${r.player.name}</span></td>
-            <td><span class="pos-badge pos-${r.player.position}">${r.player.position}</span></td>
-            <td>${r.player.team}${r.player.byeWeek ? ` <span class="tag">bye ${r.player.byeWeek}</span>` : ""}</td>
+            <td class="player-cell">${playerAvatarHtml(r.player)}<span>${escapeHtml(r.player.name)}</span></td>
+            <td><span class="pos-badge pos-${escapeHtml(r.player.position)}">${escapeHtml(r.player.position)}</span></td>
+            <td>${escapeHtml(r.player.team)}${r.player.byeWeek ? ` <span class="tag">bye ${escapeHtml(r.player.byeWeek)}</span>` : ""}</td>
             <td class="numeric"><strong>${r.scoreResult.score.toFixed(0)}</strong></td>
             <td>${isStarter ? '<span class="tag tag-start">Start</span>' : '<span class="tag tag-bench">Bench</span>'}</td>
           </tr>`;
@@ -1074,10 +1198,12 @@ function initRosterSource() {
     try {
       const teams = await getEspnTeams();
       const savedId = getSavedEspnTeamId();
+      // t.name is a real ESPN team display name — genuinely external, user-controlled
+      // text (any league member can rename their team to anything) — must be escaped.
       espnPickerList.innerHTML = teams
         .map(
           (t) =>
-            `<button class="btn ${t.id === savedId ? "btn-primary" : "btn-ghost"}" data-team-id="${t.id}" type="button">${t.name}${t.id === savedId ? " ✓" : ""}</button>`
+            `<button class="btn ${t.id === savedId ? "btn-primary" : "btn-ghost"}" data-team-id="${t.id}" type="button">${escapeHtml(t.name)}${t.id === savedId ? " ✓" : ""}</button>`
         )
         .join("");
       espnPickerList.querySelectorAll("button[data-team-id]").forEach((btn) => {
@@ -1092,7 +1218,7 @@ function initRosterSource() {
         );
       });
     } catch (err) {
-      espnPickerList.innerHTML = `<span class="hint">Couldn't load ESPN teams: ${err.message}</span>`;
+      espnPickerList.innerHTML = `<span class="hint">Couldn't load ESPN teams: ${escapeHtml(err.message)}</span>`;
     }
   }
 
@@ -1149,6 +1275,7 @@ function main() {
   initTabs();
   initYahoo();
   initSettings();
+  initPreferencesUI();
   initRosterSource();
 
   const espnBtn = document.getElementById("espn-check-btn");
@@ -1206,6 +1333,26 @@ function main() {
   loadPlayers()
     .then(updateDataSourceBanner)
     .catch((err) => showErrorBanner("loading player data", err));
+  // Contextual scoring (schedule/odds) was previously only ever loaded from inside
+  // startDraft() — fine for starting a fresh draft, but it meant a page refresh
+  // mid-draft (existing state, startDraft() never called again) left cachedTeamContext
+  // null for the rest of the session, silently going neutral on the whole Contextual
+  // tier with no visible sign anything was wrong. Load it unconditionally on boot too,
+  // and re-render once it's in so an already-visible board/recommendation/lineup picks
+  // up real context instead of staying neutral until the next full page action.
+  loadTeamContext()
+    .then(() => {
+      // scoredAvailable()'s memoization cache (see its own doc comment) is keyed only
+      // on picks.length + weights — it has no idea cachedTeamContext just went from
+      // null to real data, so without an explicit clear here, this renderAll() would
+      // silently keep serving the FIRST render's already-cached (neutral-context)
+      // scores forever, defeating the whole point of this fix. Loading team context
+      // is the one event that can change scores without picks.length or weights
+      // changing, so it's the one place besides those that must invalidate the cache.
+      clearScoredAvailableCache();
+      renderAll();
+    })
+    .catch((err) => showErrorBanner("loading team context", err));
   logDebug("App booted", { leagues: LEAGUES });
 }
 

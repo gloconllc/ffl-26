@@ -109,6 +109,18 @@ export function scoreEfficiencyTier(player, allPlayersAtPosition) {
         `Passing EPA/game ${player.epaPerGamePassing.toFixed(2)} — ${pct}th percentile at QB (last completed season)`
       );
     }
+    // Rushing EPA was previously dead here entirely — a dual-threat QB's real weekly
+    // scoring edge (Lamar Jackson, Jalen Hurts, etc.) came only from passing EPA, so
+    // this tier systematically undercounted exactly the archetype most fantasy points
+    // depend on. Blended in the same way as passing: position-relative percentile.
+    const rushEpaPool = pool.map((p) => p.epaPerGameRushing ?? null).filter((v) => v !== null);
+    if (player.epaPerGameRushing != null && rushEpaPool.length) {
+      const pct = percentileRank(player.epaPerGameRushing, rushEpaPool);
+      metrics.push(pct);
+      reasoning.push(
+        `Rushing EPA/game ${player.epaPerGameRushing.toFixed(2)} — ${pct}th percentile at QB (last completed season)`
+      );
+    }
   } else if (player.position === "RB") {
     const ypcPool = pool.map((p) =>
       p.carriesLastSeason > 0 ? p.rushingYardsLastSeason / p.carriesLastSeason : null
