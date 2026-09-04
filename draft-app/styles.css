@@ -1,38 +1,63 @@
-/* Design system per docs/CONTEXT.md — dark default, light available, Rajdhani for
-   display type, Inter for body copy. Tab layout kicks in under 768px. */
+/* FFL 26 — Command Center design system (2026-09-04 rebuild).
+   New visual identity: bolder gradient accents, rounder shapes, more energetic color
+   coding per position, still dark-first with a full light theme. Typography and the
+   position color-coding idea carry forward from the previous system (they tested
+   well for scannability); the palette, spacing, and component shapes are new. */
 
 :root {
-  --color-bg: #0a1622;
-  --color-surface: #122132;
-  --color-surface-raised: #1a3049;
-  --color-text: #e8f1f8;
-  --color-text-muted: #8ea3b8;
-  --color-top-pick: #00ff87;
-  --color-caution: #ffb703;
-  --color-avoid: #ef233c;
-  --color-border: #22415c;
+  /* Core surfaces — deep indigo/navy instead of flat near-black, so gradients and
+     accent colors have room to read as "colorful" rather than washed out. */
+  --color-bg: #0b0f1e;
+  --color-bg-gradient: radial-gradient(1200px 600px at 10% -10%, #1b2450 0%, transparent 60%),
+    radial-gradient(1000px 500px at 100% 0%, #14213a 0%, transparent 55%), #0b0f1e;
+  --color-surface: #131a2e;
+  --color-surface-raised: #1b2440;
+  --color-surface-hover: #212c4d;
+  --color-text: #eef2fb;
+  --color-text-muted: #93a0c2;
+  --color-border: #2a3559;
+
+  /* Brand gradient — the app's signature accent, used sparingly for emphasis. */
+  --brand-a: #7c5cff;
+  --brand-b: #22d3ee;
+  --brand-gradient: linear-gradient(120deg, var(--brand-a), var(--brand-b));
+
+  --color-top-pick: #2ee6a6;
+  --color-caution: #ffb454;
+  --color-avoid: #ff5470;
+
   --font-display: "Rajdhani", sans-serif;
   --font-body: "Inter", sans-serif;
   --font-numeric: "SF Mono", "JetBrains Mono", "Consolas", monospace;
-  --transition-fast: 200ms ease;
-  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.25);
-  --shadow-card-hover: 0 6px 20px rgba(0, 0, 0, 0.35);
-  /* Position accent colors — Sleeper-style quick scannability */
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+
+  --transition-fast: 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  --shadow-card: 0 4px 16px rgba(4, 7, 20, 0.35);
+  --shadow-card-hover: 0 10px 28px rgba(4, 7, 20, 0.5);
+  --shadow-glow: 0 0 0 1px rgba(124, 92, 255, 0.25), 0 8px 24px rgba(124, 92, 255, 0.15);
+
   --pos-qb: #c77dff;
-  --pos-rb: #00ff87;
-  --pos-wr: #4cc9f0;
-  --pos-te: #ffb703;
-  --pos-k: #9fb3c8;
-  --pos-def: #ef476f;
+  --pos-rb: #2ee6a6;
+  --pos-wr: #22d3ee;
+  --pos-te: #ffb454;
+  --pos-k: #93a0c2;
+  --pos-def: #ff5470;
 }
 
 [data-theme="light"] {
-  --color-bg: #f4f7fa;
+  --color-bg: #f6f7fc;
+  --color-bg-gradient: radial-gradient(1200px 600px at 10% -10%, #e9e7ff 0%, transparent 60%),
+    radial-gradient(1000px 500px at 100% 0%, #e3f7fb 0%, transparent 55%), #f6f7fc;
   --color-surface: #ffffff;
-  --color-surface-raised: #eef3f7;
-  --color-text: #0d1b2a;
-  --color-text-muted: #4a5c6b;
-  --color-border: #d7e2ea;
+  --color-surface-raised: #f1f2fb;
+  --color-surface-hover: #e7e9fa;
+  --color-text: #10142a;
+  --color-text-muted: #5a6280;
+  --color-border: #dfe2f3;
 }
 
 * {
@@ -42,131 +67,154 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--color-bg);
+  background: var(--color-bg-gradient);
+  background-attachment: fixed;
   color: var(--color-text);
   font-family: var(--font-body);
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
+/* --- Header ------------------------------------------------------------------- */
 .app-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem 1.5rem;
+  padding: 1.1rem 1.75rem;
   border-bottom: 1px solid var(--color-border);
+  backdrop-filter: blur(6px);
 }
 
 .brand {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1.5rem;
-  letter-spacing: 0.02em;
+  font-size: 1.65rem;
+  letter-spacing: 0.01em;
   margin: 0;
 }
 
 .brand-accent {
-  color: var(--color-top-pick);
+  background: var(--brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
+/* --- Buttons -------------------------------------------------------------------- */
 .btn {
   font-family: var(--font-body);
   font-weight: 600;
-  border-radius: 8px;
+  font-size: 0.9rem;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--color-border);
-  padding: 0.5rem 1rem;
+  padding: 0.55rem 1.15rem;
   cursor: pointer;
-  transition: transform var(--transition-fast), background var(--transition-fast);
+  transition: transform var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
   background: var(--color-surface-raised);
   color: var(--color-text);
 }
 
 .btn:hover {
   transform: translateY(-1px);
+  background: var(--color-surface-hover);
 }
 
 .btn-primary {
-  background: var(--color-top-pick);
-  color: #04160f;
+  background: var(--brand-gradient);
+  color: #08081a;
   border-color: transparent;
+  box-shadow: var(--shadow-glow);
+}
+
+.btn-primary:hover {
+  filter: brightness(1.08);
 }
 
 .btn-ghost {
   background: transparent;
 }
 
+/* --- Shell / layout --------------------------------------------------------------- */
 .app-shell {
   display: block;
-  padding: 1.25rem 1.5rem 2.5rem;
-  max-width: 1400px;
+  padding: 1.5rem 1.75rem 3rem;
+  max-width: 1440px;
   margin: 0 auto;
 }
 
 .tab-bar {
   display: flex;
   flex-direction: row;
-  gap: 0.4rem;
+  gap: 0.5rem;
   overflow-x: auto;
-  margin-bottom: 1.25rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 1.5rem;
+  padding: 0.35rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   position: sticky;
-  top: 0;
-  background: var(--color-bg);
+  top: 0.75rem;
   z-index: 20;
-  padding-top: 0.25rem;
 }
 
 .tab-btn {
   text-align: center;
   white-space: nowrap;
-  padding: 0.55rem 1.1rem;
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  padding: 0.6rem 1.2rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--color-text-muted);
   font-family: var(--font-body);
   font-weight: 600;
   font-size: 0.9rem;
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .tab-btn:hover {
-  transform: translateY(-1px);
   color: var(--color-text);
+  background: var(--color-surface-raised);
 }
 
 .tab-btn.is-active {
-  background: var(--color-top-pick);
-  border-color: transparent;
-  color: #04160f;
+  background: var(--brand-gradient);
+  color: #08081a;
 }
 
 .panel {
   display: none;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 1.5rem;
+  border-radius: var(--radius-lg);
+  padding: 1.75rem;
 }
 
 .panel.is-active {
   display: block;
+  animation: panel-in 220ms ease;
+}
+
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .panel h2 {
   font-family: var(--font-display);
   margin-top: 0;
+  font-size: 1.5rem;
 }
 
 .hint {
   color: var(--color-text-muted);
   font-size: 0.95rem;
+  line-height: 1.5;
 }
 
+/* --- Cards ------------------------------------------------------------------------ */
 .card-row {
   display: flex;
-  gap: 1rem;
+  gap: 1.1rem;
   flex-wrap: wrap;
 }
 
@@ -174,15 +222,16 @@ body {
   flex: 1 1 260px;
   background: var(--color-surface-raised);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 1rem 1.1rem;
+  border-radius: var(--radius-md);
+  padding: 1.15rem 1.25rem;
   box-shadow: var(--shadow-card);
-  margin-bottom: 1rem;
+  margin-bottom: 1.1rem;
   transition: box-shadow var(--transition-fast), transform var(--transition-fast);
 }
 
 .card:hover {
   box-shadow: var(--shadow-card-hover);
+  transform: translateY(-1px);
 }
 
 .card h3 {
@@ -191,20 +240,21 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  font-size: 1.15rem;
 }
 
 .tag {
   font-family: var(--font-body);
   font-size: 0.7rem;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--color-text-muted);
   border: 1px solid var(--color-border);
-  border-radius: 999px;
-  padding: 0.1rem 0.5rem;
+  border-radius: var(--radius-pill);
+  padding: 0.15rem 0.55rem;
 }
 
 .status {
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .status-pending { color: var(--color-caution); }
@@ -219,10 +269,10 @@ body {
   color: var(--color-text-muted);
 }
 tr.lineup-start {
-  background: color-mix(in srgb, var(--color-top-pick) 8%, transparent);
+  background: color-mix(in srgb, var(--color-top-pick) 10%, transparent);
 }
 tr.lineup-bench {
-  opacity: 0.75;
+  opacity: 0.7;
 }
 
 #espn-team-picker-list {
@@ -237,47 +287,49 @@ tr.lineup-bench {
 
 .debug-output {
   margin-top: 1rem;
-  background: #04101a;
-  color: #9fb3c8;
+  background: #05070f;
+  color: var(--color-text-muted);
   padding: 1rem;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   max-height: 240px;
   overflow: auto;
   font-size: 0.8rem;
+  border: 1px solid var(--color-border);
 }
 
 .slider-row {
   display: flex;
   align-items: center;
   gap: 1rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.85rem;
 }
 
 .slider-row label {
-  width: 180px;
+  width: 190px;
   flex-shrink: 0;
 }
 
 .slider-row input[type="range"] {
   flex: 1;
-  accent-color: var(--color-top-pick);
+  accent-color: var(--brand-a);
 }
 
 .placeholder-banner {
-  background: rgba(255, 183, 3, 0.12);
+  background: rgba(255, 180, 84, 0.12);
   border: 1px solid var(--color-caution);
   color: var(--color-caution);
-  padding: 0.6rem 0.9rem;
-  border-radius: 8px;
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius-sm);
   font-size: 0.85rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.1rem;
 }
 
 .form-row {
   display: flex;
   align-items: center;
   gap: 1rem;
-  margin-bottom: 0.6rem;
+  margin-bottom: 0.65rem;
+  flex-wrap: wrap;
 }
 
 .form-row label {
@@ -291,39 +343,40 @@ tr.lineup-bench {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   color: var(--color-text);
-  border-radius: 6px;
-  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.65rem;
   font-family: var(--font-body);
 }
 
-.board-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin: 1rem 0;
-  flex-wrap: wrap;
+.form-row input[type="text"] {
+  flex: 1;
+  min-width: 200px;
 }
 
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 0.5rem;
+  margin-top: 0.6rem;
 }
 
 .data-table th,
 .data-table td {
   text-align: left;
-  padding: 0.5rem 0.7rem;
+  padding: 0.55rem 0.75rem;
   border-bottom: 1px solid var(--color-border);
   font-size: 0.9rem;
 }
 
 .data-table th {
   color: var(--color-text-muted);
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+}
+
+.data-table tbody tr {
+  transition: background var(--transition-fast);
 }
 
 .data-table tbody tr:hover {
@@ -335,46 +388,43 @@ tr.lineup-bench {
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 0.75rem;
-  padding: 0.1rem 0.5rem;
-  border-radius: 4px;
-  background: var(--color-surface-raised);
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   color: var(--color-text);
 }
 
-/* Sleeper-style position color coding, applied via a data attribute set in app.js
-   would be ideal, but keeping this CSS-only for now: color the badge by matching its
-   own text content isn't possible in pure CSS, so app.js should add pos-qb/pos-rb/etc
-   classes alongside pos-badge where it wants the accent — falls back to neutral
-   styling above if it doesn't. */
-.pos-badge.pos-QB { border-color: var(--pos-qb); color: var(--pos-qb); }
-.pos-badge.pos-RB { border-color: var(--pos-rb); color: var(--pos-rb); }
-.pos-badge.pos-WR { border-color: var(--pos-wr); color: var(--pos-wr); }
-.pos-badge.pos-TE { border-color: var(--pos-te); color: var(--pos-te); }
-.pos-badge.pos-K { border-color: var(--pos-k); color: var(--pos-k); }
-.pos-badge.pos-DEF { border-color: var(--pos-def); color: var(--pos-def); }
+.pos-badge.pos-QB { border-color: var(--pos-qb); color: var(--pos-qb); background: color-mix(in srgb, var(--pos-qb) 12%, transparent); }
+.pos-badge.pos-RB { border-color: var(--pos-rb); color: var(--pos-rb); background: color-mix(in srgb, var(--pos-rb) 12%, transparent); }
+.pos-badge.pos-WR { border-color: var(--pos-wr); color: var(--pos-wr); background: color-mix(in srgb, var(--pos-wr) 12%, transparent); }
+.pos-badge.pos-TE { border-color: var(--pos-te); color: var(--pos-te); background: color-mix(in srgb, var(--pos-te) 12%, transparent); }
+.pos-badge.pos-K { border-color: var(--pos-k); color: var(--pos-k); background: color-mix(in srgb, var(--pos-k) 12%, transparent); }
+.pos-badge.pos-DEF { border-color: var(--pos-def); color: var(--pos-def); background: color-mix(in srgb, var(--pos-def) 12%, transparent); }
 
 .rec-card {
   background: var(--color-surface-raised);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 1.1rem;
-  margin-bottom: 0.9rem;
+  border-radius: var(--radius-md);
+  padding: 1.2rem;
+  margin-bottom: 1rem;
   border-left: 4px solid var(--color-top-pick);
   box-shadow: var(--shadow-card);
-  transition: box-shadow var(--transition-fast);
+  transition: box-shadow var(--transition-fast), transform var(--transition-fast);
 }
 
 .rec-card:hover {
   box-shadow: var(--shadow-card-hover);
+  transform: translateY(-1px);
 }
 
 .rec-card.rank-2 { border-left-color: var(--color-caution); }
 .rec-card.rank-3 { border-left-color: var(--color-text-muted); }
 
 .rec-card h4 {
-  margin: 0 0 0.3rem;
+  margin: 0 0 0.4rem;
   font-family: var(--font-display);
+  font-size: 1.1rem;
 }
 
 .rec-card ul {
@@ -394,28 +444,25 @@ tr.lineup-bench {
   height: 280px;
 }
 
-/* --- Real-data UI additions (2026-08-03): avatars, injury badges, tier bars, data
-   source status — see draft-app/app.js for where these render. ------------------- */
-
 .data-source-ok {
-  background: rgba(0, 255, 135, 0.1);
+  background: rgba(46, 230, 166, 0.1);
   border: 1px solid var(--color-top-pick);
   color: var(--color-top-pick);
-  padding: 0.6rem 0.9rem;
-  border-radius: 8px;
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius-sm);
   font-size: 0.85rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.1rem;
 }
 
 .player-cell {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.65rem;
 }
 
 .avatar {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   object-fit: cover;
   background: var(--color-surface);
@@ -427,30 +474,30 @@ tr.lineup-bench {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   color: var(--color-text-muted);
   font-family: var(--font-display);
-  font-size: 0.6rem;
+  font-size: 0.62rem;
   font-weight: 700;
   flex-shrink: 0;
 }
 
 .injury-badge {
   font-size: 0.7rem;
-  font-weight: 600;
-  padding: 0.05rem 0.4rem;
-  border-radius: 999px;
+  font-weight: 700;
+  padding: 0.05rem 0.45rem;
+  border-radius: var(--radius-pill);
   border: 1px solid;
-  margin-left: 0.2rem;
+  margin-left: 0.25rem;
 }
 
-.injury-badge.injury-out { color: var(--color-avoid); border-color: var(--color-avoid); background: rgba(239, 35, 60, 0.1); }
-.injury-badge.injury-doubtful { color: var(--color-caution); border-color: var(--color-caution); background: rgba(255, 183, 3, 0.1); }
-.injury-badge.injury-questionable { color: var(--color-text-muted); border-color: var(--color-border); background: rgba(159, 179, 200, 0.08); }
+.injury-badge.injury-out { color: var(--color-avoid); border-color: var(--color-avoid); background: rgba(255, 84, 112, 0.1); }
+.injury-badge.injury-doubtful { color: var(--color-caution); border-color: var(--color-caution); background: rgba(255, 180, 84, 0.1); }
+.injury-badge.injury-questionable { color: var(--color-text-muted); border-color: var(--color-border); background: rgba(147, 160, 194, 0.08); }
 
 .numeric {
   font-family: var(--font-numeric);
@@ -458,13 +505,11 @@ tr.lineup-bench {
   text-align: right;
 }
 
-/* Tier-breakdown bars — a lightweight, dependency-free visualization of the four
-   scoring tiers behind a recommendation, shown on each rec-card. */
 .tier-bars {
-  margin: 0.6rem 0 0.8rem;
-  padding: 0.6rem 0.75rem;
+  margin: 0.7rem 0 0.9rem;
+  padding: 0.65rem 0.8rem;
   background: var(--color-surface);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
 }
 
@@ -473,7 +518,7 @@ tr.lineup-bench {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.75rem;
-  margin-bottom: 0.3rem;
+  margin-bottom: 0.32rem;
 }
 
 .tier-bar-row:last-child { margin-bottom: 0; }
@@ -482,24 +527,24 @@ tr.lineup-bench {
   width: 34px;
   flex-shrink: 0;
   color: var(--color-text-muted);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .tier-bar-track {
   flex: 1;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--color-border);
   overflow: hidden;
 }
 
 .tier-bar-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   transition: width var(--transition-fast);
 }
 
-.tier-bar-fill.tier-bar-projections { background: var(--color-top-pick); }
+.tier-bar-fill.tier-bar-projections { background: var(--brand-gradient); }
 .tier-bar-fill.tier-bar-efficiency { background: var(--pos-wr); }
 .tier-bar-fill.tier-bar-contextual { background: var(--pos-te); }
 .tier-bar-fill.tier-bar-risk { background: var(--pos-def); }
@@ -512,16 +557,15 @@ tr.lineup-bench {
   color: var(--color-text-muted);
 }
 
-/* Roster needs progress bars (My Roster tab) */
 .needs-bars {
-  margin: 0.75rem 0 1.25rem;
+  margin: 0.8rem 0 1.3rem;
 }
 
 .need-bar-row {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.45rem;
 }
 
 .need-bar-label {
@@ -535,14 +579,14 @@ tr.lineup-bench {
 .need-bar-track {
   flex: 1;
   height: 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--color-border);
   overflow: hidden;
 }
 
 .need-bar-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--color-top-pick);
   transition: width var(--transition-fast);
 }
@@ -561,10 +605,11 @@ tr.lineup-bench {
   .app-shell {
     padding: 1rem;
   }
+  .app-header {
+    padding: 1rem;
+  }
 }
 
-/* --- Error boundary banner: a real error must always surface here, never a blank
-   or frozen page. Dismissible, sits above everything, never blocks input. ---------- */
 .error-banner[hidden] {
   display: none;
 }
@@ -577,10 +622,10 @@ tr.lineup-bench {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  background: #3a0d16;
-  color: #ffd6dd;
+  background: #3a0d1c;
+  color: #ffd9e2;
   border-bottom: 2px solid var(--color-avoid);
-  padding: 0.7rem 1.25rem;
+  padding: 0.75rem 1.25rem;
   font-size: 0.9rem;
 }
 
@@ -591,12 +636,10 @@ tr.lineup-bench {
 
 .error-banner .btn {
   border-color: rgba(255, 255, 255, 0.35);
-  color: #ffd6dd;
+  color: #ffd9e2;
   flex-shrink: 0;
 }
 
-/* --- Busy / loading button state: whenever a button starts async or heavier work,
-   this makes the click visibly register immediately instead of appearing dead. ---- */
 .btn.is-busy {
   position: relative;
   color: transparent !important;
@@ -614,8 +657,7 @@ tr.lineup-bench {
   margin: -7px 0 0 -7px;
   border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, 0.35);
-  border-top-color: currentColor;
-  border-top-color: #04160f;
+  border-top-color: #08081a;
   animation: btn-spin 0.7s linear infinite;
 }
 
@@ -628,35 +670,32 @@ tr.lineup-bench {
   to { transform: rotate(360deg); }
 }
 
-/* --- Draft Board + live Recommendation, side by side (explicit request: see both
-   at the same time without switching tabs). Sidebar collapses under the board on
-   narrower screens rather than disappearing. ---------------------------------------- */
 .status-ticker {
   display: flex;
   align-items: center;
   gap: 1rem;
-  margin: 0 0 1rem;
+  margin: 0 0 1.1rem;
   flex-wrap: wrap;
   background: var(--color-surface-raised);
   border: 1px solid var(--color-border);
-  border-radius: 999px;
-  padding: 0.6rem 1.1rem;
+  border-radius: var(--radius-pill);
+  padding: 0.65rem 1.2rem;
 }
 
 .board-layout {
   display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 1.25rem;
+  grid-template-columns: 1fr 390px;
+  gap: 1.35rem;
   align-items: start;
 }
 
 .board-sidebar {
   position: sticky;
-  top: 4.5rem;
+  top: 5.5rem;
 }
 
 .sidebar-rec-card .rec-card {
-  padding: 0.85rem;
+  padding: 0.9rem;
   margin-bottom: 0;
 }
 
@@ -667,4 +706,20 @@ tr.lineup-bench {
   .board-sidebar {
     position: static;
   }
+}
+
+/* --- Stat pills — new: quick-glance colorful chips used for headline numbers
+   (e.g. VORP, tier) alongside a card title. --------------------------------------- */
+.stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--font-numeric);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.15rem 0.6rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
 }
