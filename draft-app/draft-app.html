@@ -163,8 +163,8 @@
 
     <section id="panel-lineup" class="panel">
       <h2>Lineup Optimizer</h2>
-      <p class="placeholder-banner">⚠ Not built yet — queued Phase 2, part of this same app and same brain (roster state, scoring engine, preference layer) as Draft. See docs/CONTEXT.md "Phase 2 — Weekly Lineup Engine."</p>
-      <p class="hint">Once built, this reads the roster you drafted on the Draft tab and this week's projections/matchup data to recommend a starting lineup, with the closest projection-gap calls called out explicitly rather than hidden.</p>
+      <p class="hint">Start/bench recommendations from the same VORP/tier scoring engine used on Draft — ranked within each roster slot. Honest limitation: the underlying projections are a 2024-actuals-based season model plus Week 1 2026 schedule context only (see the Draft tab's own banner) — this is not yet a true week-by-week matchup optimizer, just the best-available ranking applied to whichever players are on your roster right now.</p>
+      <div id="lineup-content"><p class="hint">No roster yet — draft on the Draft tab, or connect Yahoo/ESPN below, first.</p></div>
     </section>
 
     <section id="panel-trades" class="panel">
@@ -184,6 +184,24 @@
 
     <section id="panel-roster" class="panel">
       <h2>My Roster</h2>
+      <div class="card" id="roster-source-card">
+        <h3>Roster source</h3>
+        <p class="hint">This choice also drives the Lineup tab. Yahoo/ESPN require that league to be connected — falls back to your local draft log automatically if a live fetch fails.</p>
+        <div class="form-row">
+          <label for="roster-source-select">Source</label>
+          <select id="roster-source-select">
+            <option value="local">Local draft log (this app's practice/live draft tracking)</option>
+            <option value="yahoo">Yahoo (live)</option>
+            <option value="espn">ESPN (live)</option>
+          </select>
+          <button id="roster-refresh-btn" class="btn btn-ghost" type="button">Refresh</button>
+        </div>
+        <div id="espn-team-picker" hidden>
+          <p class="hint">Pick which ESPN team is yours (ESPN's API can't detect this automatically):</p>
+          <div id="espn-team-picker-list"></div>
+        </div>
+        <p class="hint" id="roster-source-warning"></p>
+      </div>
       <div id="roster-content"><p class="hint">Start a draft on the Draft Board tab first.</p></div>
     </section>
 

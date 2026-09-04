@@ -211,6 +211,30 @@ body {
 .status-connected { color: var(--color-top-pick); }
 .status-error { color: var(--color-avoid); }
 
+.tag-start {
+  color: var(--color-top-pick);
+  border-color: var(--color-top-pick);
+}
+.tag-bench {
+  color: var(--color-text-muted);
+}
+tr.lineup-start {
+  background: color-mix(in srgb, var(--color-top-pick) 8%, transparent);
+}
+tr.lineup-bench {
+  opacity: 0.75;
+}
+
+#espn-team-picker-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+#espn-team-picker-list button {
+  flex: 0 0 auto;
+}
+
 .debug-output {
   margin-top: 1rem;
   background: #04101a;

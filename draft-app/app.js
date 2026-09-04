@@ -20,6 +20,13 @@ import { pickForOpponent, simulateUntilMyTurn } from "../shared/mock-draft.js";
 import { scorePlayer, buildScoringCaches, DEFAULT_TIER_WEIGHTS } from "../shared/scoring-engine.js";
 import { getPreferences, findMatchingPreference } from "../shared/preferences.js";
 import { applyPreferenceLayer, acknowledgeOverride } from "../shared/preference-engine.js";
+import {
+  getRosterSource,
+  setRosterSource,
+  clearRosterCache,
+  resolveMyRoster,
+} from "../shared/roster-source.js";
+import { getEspnTeams, getSavedEspnTeamId, saveEspnTeamId } from "../shared/espn-roster.js";
 
 const WEIGHTS_KEY = "tier_weights";
 const STRATEGY_KEY = "strategy_preset"; // "recommended" | "brain" | "custom"
@@ -862,10 +869,17 @@ function renderPreferenceLayer(ranked) {
  * reports every slot, not just the ones still open. */
 function computeAllSlotStatus(state, teamSlot) {
   const roster = getRosterForSlot(state, teamSlot);
+  return computeSlotStatusFromRoster(roster, state.rosterSlots);
+}
+
+/** Same slot-fill counting as computeAllSlotStatus, but taking a plain roster array
+ * directly instead of reading it off draft-state — this is what makes My Roster/Lineup
+ * work from a live Yahoo/ESPN fetch, which has no local draft-state at all. */
+function computeSlotStatusFromRoster(roster, rosterSlots = DEFAULT_ROSTER_SLOTS) {
   const counts = {};
   for (const p of roster) counts[p.position] = (counts[p.position] || 0) + 1;
 
-  return state.rosterSlots
+  return rosterSlots
     .filter((slotDef) => slotDef.slot !== "BN" && slotDef.slot !== "IR")
     .map((slotDef) => {
       const filled = slotDef.eligiblePositions.reduce(
@@ -892,32 +906,121 @@ function renderNeedsBars(slotStatus) {
   return `<div class="needs-bars">${rows}</div>`;
 }
 
-function renderRoster() {
-  const container = document.getElementById("roster-content");
+/** Both My Roster and Lineup need "the current roster, regardless of where it comes
+ * from" — this is the one place that resolves it, so both tabs always agree. Returns
+ * null players on genuine failure (e.g. no local draft and no live source available)
+ * rather than throwing, since "nothing to show yet" is a normal, expected state here. */
+async function getCurrentRosterView() {
   const state = getDraftState();
-  if (!state) {
-    container.innerHTML = `<p class="hint">Start a draft on the Draft Board tab first.</p>`;
-    return;
-  }
+  const players = cachedPlayers || (await loadPlayers());
+  const result = await resolveMyRoster(state, players);
+  const warningEl = document.getElementById("roster-source-warning");
+  if (warningEl) warningEl.textContent = result.warning || "";
+  return result;
+}
 
-  const roster = getMyRoster(state);
-  const slotStatus = computeAllSlotStatus(state, state.myTeamSlot);
+function renderRoster() {
+  getCurrentRosterView()
+    .then(({ players: roster }) => {
+      const container = document.getElementById("roster-content");
+      if (!container) return;
+      if (!roster.length) {
+        container.innerHTML = `<p class="hint">No roster yet — start a draft on the Draft Board tab, or pick a connected Yahoo/ESPN source above.</p>`;
+        return;
+      }
 
-  const rosterRows = roster
-    .map(
-      (p) =>
-        `<tr><td class="player-cell">${playerAvatarHtml(p)}<span>${p.name}</span></td><td><span class="pos-badge pos-${p.position}">${p.position}</span></td><td>${p.team}${p.byeWeek ? ` <span class="tag">bye ${p.byeWeek}</span>` : ""}</td></tr>`
-    )
-    .join("");
+      const slotStatus = computeSlotStatusFromRoster(roster);
+      const rosterRows = roster
+        .map(
+          (p) =>
+            `<tr><td class="player-cell">${playerAvatarHtml(p)}<span>${p.name}</span></td><td><span class="pos-badge pos-${p.position}">${p.position}</span></td><td>${p.team}${p.byeWeek ? ` <span class="tag">bye ${p.byeWeek}</span>` : ""}</td></tr>`
+        )
+        .join("");
 
-  container.innerHTML = `
-    <h3>Roster needs</h3>
-    ${renderNeedsBars(slotStatus)}
-    <table class="data-table">
-      <thead><tr><th>Player</th><th>Pos</th><th>Team</th></tr></thead>
-      <tbody>${rosterRows || `<tr><td colspan="3">No picks yet.</td></tr>`}</tbody>
-    </table>
-  `;
+      container.innerHTML = `
+        <h3>Roster needs</h3>
+        ${renderNeedsBars(slotStatus)}
+        <table class="data-table">
+          <thead><tr><th>Player</th><th>Pos</th><th>Team</th></tr></thead>
+          <tbody>${rosterRows || `<tr><td colspan="3">No picks yet.</td></tr>`}</tbody>
+        </table>
+      `;
+    })
+    .catch((err) => showErrorBanner("rendering roster", err));
+}
+
+/** Lineup v1: within each real roster slot (QB, RB, WR, TE, FLEX, K, DEF), rank the
+ * eligible rostered players by the same scoring engine used everywhere else in the
+ * app and mark the top `count` as Start, the rest as Bench. Bye-week starters are
+ * flagged explicitly rather than silently recommended. This is honestly scoped as a
+ * "best player available per slot" ranking, NOT a true week-by-week matchup
+ * optimizer — see the Lineup tab's own hint text for why (the scoring engine's
+ * Contextual tier only has real schedule/odds data for Week 1 2026 so far). */
+function renderLineup() {
+  getCurrentRosterView()
+    .then(async ({ players: roster }) => {
+      const container = document.getElementById("lineup-content");
+      if (!container) return;
+      if (!roster.length) {
+        container.innerHTML = `<p class="hint">No roster yet — draft on the Draft tab, or connect Yahoo/ESPN on the Roster tab, first.</p>`;
+        return;
+      }
+
+      const leagueSettings = {
+        numTeams: 10,
+        startersPerTeamByPosition: { QB: 1, RB: 2.5, WR: 2.5, TE: 1, K: 1, DEF: 1 },
+      };
+      const caches = buildScoringCaches(roster, leagueSettings);
+      const weights = getWeights();
+      const scoredRoster = roster
+        .map((player) => ({
+          player,
+          scoreResult: scorePlayer(
+            player,
+            { allPlayersAtPosition: roster, leagueSettings, teamContext: cachedTeamContext || {}, ...caches },
+            weights
+          ),
+        }))
+        .sort((a, b) => b.scoreResult.score - a.scoreResult.score);
+
+      const usedIds = new Set();
+      const slotSections = DEFAULT_ROSTER_SLOTS.filter((s) => s.slot !== "BN" && s.slot !== "IR").map((slotDef) => {
+        const eligible = scoredRoster.filter(
+          (r) => !usedIds.has(r.player.providerPlayerId) && slotDef.eligiblePositions.includes(r.player.position)
+        );
+        const starters = eligible.slice(0, slotDef.count);
+        starters.forEach((r) => usedIds.add(r.player.providerPlayerId));
+        return { slotDef, starters };
+      });
+      const bench = scoredRoster.filter((r) => !usedIds.has(r.player.providerPlayerId));
+
+      const rowHtml = (r, isStarter) => `
+          <tr class="${isStarter ? "lineup-start" : "lineup-bench"}">
+            <td class="player-cell">${playerAvatarHtml(r.player)}<span>${r.player.name}</span></td>
+            <td><span class="pos-badge pos-${r.player.position}">${r.player.position}</span></td>
+            <td>${r.player.team}${r.player.byeWeek ? ` <span class="tag">bye ${r.player.byeWeek}</span>` : ""}</td>
+            <td class="numeric"><strong>${r.scoreResult.score.toFixed(0)}</strong></td>
+            <td>${isStarter ? '<span class="tag tag-start">Start</span>' : '<span class="tag tag-bench">Bench</span>'}</td>
+          </tr>`;
+
+      const slotsHtml = slotSections
+        .map(({ slotDef, starters }) => {
+          if (!starters.length) {
+            return `<h4>${slotDef.slot}</h4><p class="hint">No eligible player rostered for this slot.</p>`;
+          }
+          return `<h4>${slotDef.slot}</h4><table class="data-table"><tbody>${starters
+            .map((r) => rowHtml(r, true))
+            .join("")}</tbody></table>`;
+        })
+        .join("");
+
+      const benchHtml = bench.length
+        ? `<h4>Bench</h4><table class="data-table"><tbody>${bench.map((r) => rowHtml(r, false)).join("")}</tbody></table>`
+        : "";
+
+      container.innerHTML = slotsHtml + benchHtml;
+    })
+    .catch((err) => showErrorBanner("rendering lineup", err));
 }
 
 /** Run each render function independently — a bug in one panel's rendering must
@@ -930,6 +1033,7 @@ function renderAll() {
     ["recommendation", renderRecommendation],
     ["live board recommendation", renderBoardRecommendation],
     ["roster", renderRoster],
+    ["lineup", renderLineup],
   ];
   for (const [label, fn] of sections) {
     try {
@@ -948,6 +1052,78 @@ async function handleLiveSync() {
     "live-sync.js needs a real Yahoo/ESPN draftresults payload shape before this can " +
       "actually map picks — not wired to a button action yet. See shared/live-sync.js TODOs."
   );
+}
+
+// --- Roster source (Yahoo / ESPN / local) ------------------------------------------
+// Drives both My Roster and Lineup — see shared/roster-source.js for the resolution
+// logic and shared/espn-roster.js for why ESPN needs a one-time manual team pick
+// (unlike Yahoo, ESPN's API gives the client no way to auto-detect "which team is
+// mine").
+function initRosterSource() {
+  const select = document.getElementById("roster-source-select");
+  const refreshBtn = document.getElementById("roster-refresh-btn");
+  const espnPicker = document.getElementById("espn-team-picker");
+  const espnPickerList = document.getElementById("espn-team-picker-list");
+  if (!select) return;
+
+  select.value = getRosterSource();
+
+  async function loadEspnTeamChoices() {
+    if (!espnPickerList) return;
+    espnPickerList.innerHTML = `<span class="hint">Loading ESPN teams…</span>`;
+    try {
+      const teams = await getEspnTeams();
+      const savedId = getSavedEspnTeamId();
+      espnPickerList.innerHTML = teams
+        .map(
+          (t) =>
+            `<button class="btn ${t.id === savedId ? "btn-primary" : "btn-ghost"}" data-team-id="${t.id}" type="button">${t.name}${t.id === savedId ? " ✓" : ""}</button>`
+        )
+        .join("");
+      espnPickerList.querySelectorAll("button[data-team-id]").forEach((btn) => {
+        btn.addEventListener(
+          "click",
+          safe(() => {
+            saveEspnTeamId(Number(btn.dataset.teamId));
+            clearRosterCache("espn");
+            loadEspnTeamChoices();
+            renderAll();
+          }, "pick ESPN team")
+        );
+      });
+    } catch (err) {
+      espnPickerList.innerHTML = `<span class="hint">Couldn't load ESPN teams: ${err.message}</span>`;
+    }
+  }
+
+  function updateEspnPickerVisibility() {
+    if (!espnPicker) return;
+    espnPicker.hidden = select.value !== "espn";
+    if (!espnPicker.hidden) loadEspnTeamChoices();
+  }
+  updateEspnPickerVisibility();
+
+  select.addEventListener(
+    "change",
+    safe(() => {
+      setRosterSource(select.value);
+      updateEspnPickerVisibility();
+      renderAll();
+    }, "change roster source")
+  );
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener(
+      "click",
+      safe(() =>
+        withBusy(refreshBtn, async () => {
+          clearRosterCache();
+          renderAll();
+        }),
+        "refresh roster"
+      )
+    );
+  }
 }
 
 // --- Boot ------------------------------------------------------------------------
@@ -973,6 +1149,7 @@ function main() {
   initTabs();
   initYahoo();
   initSettings();
+  initRosterSource();
 
   const espnBtn = document.getElementById("espn-check-btn");
   espnBtn.addEventListener("click", safe(() => withBusy(espnBtn, checkEspn), "check ESPN connection"));
