@@ -24,9 +24,12 @@ import {
   playerAvatarHtml,
   injuryBadgeHtml,
   renderTierBars,
+  tierChipHtml,
+  marketBadgeHtml,
 } from "./dom-utils.js";
 import { getWeights, getStrategyPreset, effectiveNeedAwareness } from "./settings.js";
 import { getCachedTeamContext } from "./player-data.js";
+import { marketForTeam, trendFor } from "../../shared/kalshi-client.js";
 
 /** Same-team "stacking" downside: rostering multiple players from the same NFL team
  * correlates their weekly outcomes (one bad game plan drags both down together) and,
@@ -108,61 +111,25 @@ export function scoredAvailable(state) {
   return result;
 }
 
-// Chart.js instance, recreated on each render rather than mutated in place — simplest
-// correct approach for a table that can change shape (filter/weights/strategy) often.
-let availableChart = null;
-function renderAvailableChart(ranked) {
-  const canvas = document.getElementById("available-chart");
-  if (!canvas || typeof Chart === "undefined") return; // Chart.js CDN blocked/offline — degrade gracefully, no crash
-  const top = ranked.slice(0, 10);
-  const colors = {
-    QB: "#c77dff",
-    RB: "#2ee6a6",
-    WR: "#22d3ee",
-    TE: "#ffb454",
-    K: "#93a0c2",
-    DEF: "#ff5470",
-  };
-
-  if (availableChart) availableChart.destroy();
-  availableChart = new Chart(canvas.getContext("2d"), {
-    type: "bar",
-    data: {
-      labels: top.map((r) => r.player.name),
-      datasets: [
-        {
-          label: "Score (0-100, blended tiers)",
-          data: top.map((r) => r.scoreResult.score),
-          backgroundColor: top.map((r) => colors[r.player.position] || "#93a0c2"),
-        },
-      ],
-    },
-    options: {
-      indexAxis: "y",
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { min: 0, max: 100, grid: { color: "#2a3559" }, ticks: { color: "#93a0c2" } },
-        y: { grid: { display: false }, ticks: { color: "#eef2fb" } },
-      },
-    },
-  });
-}
-
 export function renderAvailablePlayers() {
   const state = getDraftState();
   const tbody = document.querySelector("#available-table tbody");
   if (!tbody) return;
   tbody.innerHTML = "";
-  if (!state) return;
+  if (!state) {
+    tbody.innerHTML = `<tr><td colspan="8"><p class="hint" style="margin:0">Start a draft in the Draft Room to rank the available pool. The Overview tab's cheat sheet works right now without one.</p></td></tr>`;
+    return;
+  }
 
   const filterEl = document.getElementById("position-filter");
   const filter = filterEl ? filterEl.value : "ALL";
+  const searchEl = document.getElementById("player-search");
+  const query = searchEl ? searchEl.value.trim().toLowerCase() : "";
   const ranked = scoredAvailable(state).filter(
-    (r) => filter === "ALL" || r.player.position === filter
+    (r) =>
+      (filter === "ALL" || r.player.position === filter) &&
+      (!query || r.player.name.toLowerCase().includes(query) || (r.player.team || "").toLowerCase().includes(query))
   );
-  renderAvailableChart(ranked);
 
   // Real-time draft-day mode: the Draft button logs whichever team's turn it
   // currently is (per teamSlotForPick), not only "your" pick. This lets you click
@@ -173,22 +140,102 @@ export function renderAvailablePlayers() {
   const mine = isMyPick(state);
   const pickNum = currentPickNumber(state);
   const { teamSlot } = teamSlotForPick(pickNum, state.numTeams);
-  const draftBtnLabel = mine ? "Draft (YOU)" : `Draft (Team ${teamSlot})`;
-  for (const { player, scoreResult } of ranked.slice(0, 60)) {
+  const draftBtnLabel = mine ? "Draft" : `Log T${teamSlot}`;
+  ranked.slice(0, 80).forEach(({ player, scoreResult }, i) => {
+    const market = marketForTeam(player.team);
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td class="player-cell">${playerAvatarHtml(player)}<span>${escapeHtml(player.name)}</span> ${injuryBadgeHtml(player)}</td>
+      <td class="col-rank">${i + 1}</td>
+      <td>
+        <div class="player-cell">
+          ${playerAvatarHtml(player)}
+          <span class="player-name">${escapeHtml(player.name)}</span>
+          ${injuryBadgeHtml(player)}
+          ${market ? marketBadgeHtml(market, trendFor(market.ticker)) : ""}
+        </div>
+      </td>
       <td><span class="pos-badge pos-${escapeHtml(player.position)}">${escapeHtml(player.position)}</span></td>
       <td>${escapeHtml(player.team)}${player.byeWeek ? ` <span class="tag">bye ${escapeHtml(player.byeWeek)}</span>` : ""}</td>
-      <td>Tier ${scoreResult.tier ?? "?"}</td>
+      <td>${tierChipHtml(scoreResult.tier)}</td>
       <td class="numeric">${scoreResult.vorp.toFixed(1)}</td>
       <td class="numeric"><strong>${scoreResult.score.toFixed(0)}</strong></td>
-      <td><button class="btn ${mine ? "btn-primary" : "btn-ghost"} btn-draft" data-player="${player.providerPlayerId}" title="Logs this pick for whichever team is currently on the clock">${draftBtnLabel}</button></td>
+      <td><button class="btn btn-sm ${mine ? "btn-primary" : "btn-ghost"} btn-draft" data-player="${player.providerPlayerId}" title="Logs this pick for whichever team is currently on the clock">${draftBtnLabel}</button></td>
     `;
     tbody.appendChild(tr);
+  });
+
+  if (!ranked.length) {
+    tbody.innerHTML = `<tr><td colspan="8"><p class="hint" style="margin:0">No players match that filter.</p></td></tr>`;
   }
 
   wireDraftButtons(tbody);
+}
+
+/** Compact best-available list for the Draft Room, so the main draft screen shows who
+ * to take without switching tabs. Same ranking as the Players tab, always. */
+export function renderBestAvailable() {
+  const el = document.getElementById("board-best-available");
+  if (!el) return;
+  const state = getDraftState();
+  if (!state) {
+    el.innerHTML = `<p class="hint" style="margin-top:0">Start a draft to see the board fill in.</p>`;
+    return;
+  }
+
+  const view = computeRecommendationView();
+  const ranked = view.status === "ready" ? view.ranked : scoredAvailable(state);
+  const mine = isMyPick(state);
+
+  el.innerHTML = `
+    <div class="table-scroll">
+      <table class="data-table compact">
+        <thead><tr><th class="col-rank">#</th><th>Player</th><th>Pos</th><th>Team</th><th>Tier</th><th class="numeric">Score</th><th></th></tr></thead>
+        <tbody>
+          ${ranked
+            .slice(0, 12)
+            .map(
+              ({ player, scoreResult }, i) => `
+            <tr>
+              <td class="col-rank">${i + 1}</td>
+              <td><div class="player-cell">${playerAvatarHtml(player)}<span class="player-name">${escapeHtml(player.name)}</span>${injuryBadgeHtml(player)}</div></td>
+              <td><span class="pos-badge pos-${escapeHtml(player.position)}">${escapeHtml(player.position)}</span></td>
+              <td>${escapeHtml(player.team)}</td>
+              <td>${tierChipHtml(scoreResult.tier)}</td>
+              <td class="numeric"><strong>${scoreResult.score.toFixed(0)}</strong></td>
+              <td><button class="btn btn-sm ${mine ? "btn-primary" : "btn-ghost"} btn-draft" data-player="${player.providerPlayerId}">${mine ? "Draft" : "Log"}</button></td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>`;
+
+  wireDraftButtons(el);
+}
+
+/** Position chips + search box on the Players tab. The chips write through to the
+ * (visually hidden) native select so the existing change-event wiring keeps working
+ * and the control stays keyboard/screen-reader accessible. */
+export function initPlayerFilters() {
+  const select = document.getElementById("position-filter");
+  const chips = document.querySelectorAll(".pos-filter");
+  chips.forEach((chip) => {
+    chip.addEventListener(
+      "click",
+      safe(() => {
+        chips.forEach((c) => c.classList.toggle("is-active", c === chip));
+        if (select) {
+          select.value = chip.dataset.pos;
+          select.dispatchEvent(new Event("change"));
+        }
+      }, "filter by position")
+    );
+  });
+
+  const search = document.getElementById("player-search");
+  if (search) {
+    search.addEventListener("input", safe(renderAvailablePlayers, "search players"));
+  }
 }
 
 export function draftPlayer(providerPlayerId) {
@@ -216,9 +263,18 @@ function recCardHtml(player, scoreResult, rank, myRoster = []) {
   const stackNote = stackingPenalty(player, myRoster, 1, 1).note;
   const stackWarning = stackNote ? `<li class="cliff-warning">⚠ ${escapeHtml(stackNote)}</li>` : "";
   const tierBars = scoreResult.tierBreakdown ? renderTierBars(scoreResult.tierBreakdown) : "";
+  const market = marketForTeam(player.team);
   return `
     <div class="rec-card rank-${rank}">
-      <h4>#${rank} ${escapeHtml(player.name)} <span class="pos-badge pos-${escapeHtml(player.position)}">${escapeHtml(player.position)}</span> — ${escapeHtml(player.team)}</h4>
+      <h4>
+        <span class="rec-rank">#${rank}</span>
+        ${escapeHtml(player.name)}
+        <span class="pos-badge pos-${escapeHtml(player.position)}">${escapeHtml(player.position)}</span>
+        <span class="pill">${escapeHtml(player.team)}</span>
+        ${tierChipHtml(scoreResult.tier)}
+        ${injuryBadgeHtml(player)}
+        ${market ? marketBadgeHtml(market, trendFor(market.ticker)) : ""}
+      </h4>
       ${tierBars}
       <ul>${reasoningItems}${cliff}${stackWarning}</ul>
       <button class="btn btn-primary btn-draft" data-player="${player.providerPlayerId}">Draft this player</button>

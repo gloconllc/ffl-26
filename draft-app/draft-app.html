@@ -5,262 +5,437 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>FFL 26 — Command Center</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/draft-app/styles.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 </head>
 <body>
   <div id="error-banner" class="error-banner" hidden>
     <span id="error-banner-text"></span>
-    <button id="error-banner-dismiss" class="btn btn-ghost" type="button">Dismiss</button>
+    <button id="error-banner-dismiss" class="btn btn-ghost btn-sm" type="button">Dismiss</button>
   </div>
 
-  <header class="app-header">
-    <div>
-      <h1 class="brand">FFL<span class="brand-accent">26</span> Command Center</h1>
-      <p class="hint" style="margin-top:2px">Draft · Lineups · Trades · Free Agents · Markets — one brain, every decision</p>
+  <!-- App bar: brand, which league you're working in, live connection state, theme.
+       League switcher is real — it drives which league's roster/settings the app reads. -->
+  <header class="appbar">
+    <div class="appbar-left">
+      <span class="brand-mark">FFL<em>26</em></span>
+      <span class="brand-sub">Command Center</span>
     </div>
-    <button id="theme-toggle" class="btn btn-ghost" type="button" aria-label="Toggle light/dark theme">☾</button>
+
+    <div class="league-switch" role="group" aria-label="Active league">
+      <button class="league-btn is-active" data-league="yahoo" type="button">
+        <span class="league-name">Yahoo</span>
+        <span class="league-id">865803</span>
+        <span class="conn-dot" id="dot-yahoo" title="Yahoo connection"></span>
+      </button>
+      <button class="league-btn" data-league="espn" type="button">
+        <span class="league-name">ESPN</span>
+        <span class="league-id">647918841</span>
+        <span class="conn-dot" id="dot-espn" title="ESPN connection"></span>
+      </button>
+    </div>
+
+    <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle light/dark theme">☾</button>
   </header>
 
+  <nav class="tabbar" aria-label="Sections">
+    <button class="tab-btn is-active" data-panel="overview">Overview</button>
+    <button class="tab-btn" data-panel="board">Draft Room</button>
+    <button class="tab-btn" data-panel="recommend">Players</button>
+    <button class="tab-btn" data-panel="lineup">Lineup</button>
+    <button class="tab-btn" data-panel="roster">My Team</button>
+    <button class="tab-btn" data-panel="markets">Markets</button>
+    <button class="tab-btn" data-panel="trades">Trades</button>
+    <button class="tab-btn" data-panel="freeagents">Free Agents</button>
+    <button class="tab-btn" data-panel="connect">Connect</button>
+    <button class="tab-btn" data-panel="settings">Settings</button>
+  </nav>
+
   <main class="app-shell">
-    <nav class="tab-bar" aria-label="Sections">
-      <button class="tab-btn is-active" data-panel="connect">Connect</button>
-      <button class="tab-btn" data-panel="board">Draft</button>
-      <button class="tab-btn" data-panel="recommend">Recommendation</button>
-      <button class="tab-btn" data-panel="lineup">Lineup</button>
-      <button class="tab-btn" data-panel="trades">Trades</button>
-      <button class="tab-btn" data-panel="freeagents">Free Agents</button>
-      <button class="tab-btn" data-panel="markets">Markets</button>
-      <button class="tab-btn" data-panel="roster">My Roster</button>
-      <button class="tab-btn" data-panel="settings">Settings</button>
-    </nav>
 
-    <section id="panel-connect" class="panel is-active">
-      <h2>League Connections</h2>
-      <p class="hint">Both leagues need a draft assistant this season — connect each one below.</p>
-
-      <div class="card-row">
-        <article class="card">
-          <h3>Yahoo <span class="tag">League 865803</span></h3>
-          <p id="yahoo-status" class="status status-pending">Not connected</p>
-          <button id="yahoo-connect-btn" class="btn btn-primary" type="button">Connect Yahoo</button>
-        </article>
-
-        <article class="card">
-          <h3>ESPN <span class="tag">League 647918841</span></h3>
-          <p id="espn-status" class="status status-pending">Checking…</p>
-          <button id="espn-check-btn" class="btn btn-primary" type="button">Test ESPN Connection</button>
-        </article>
+    <!-- ============================= OVERVIEW / HOME ============================= -->
+    <!-- The "don't make me hop across tabs" screen: status at a glance, the cheat
+         sheet, and the one chart that matters. -->
+    <section id="panel-overview" class="panel is-active">
+      <div class="page-head">
+        <h2>Overview</h2>
+        <p class="page-sub">Everything that matters right now, on one screen — the cheat sheet below is tiered by position, best first.</p>
       </div>
 
-      <pre id="debug-output" class="debug-output" hidden></pre>
+      <p id="data-source-banner" class="data-banner">Loading player data…</p>
+
+      <div id="kpi-strip" class="kpi-strip"></div>
+
+      <div class="split-2">
+        <section class="card">
+          <div class="card-head">
+            <h3>Top 10 available</h3>
+            <span class="card-note">blended score, 0–100</span>
+          </div>
+          <div class="chart-wrap"><canvas id="available-chart" height="150"></canvas></div>
+        </section>
+
+        <section class="card" id="overview-next-card">
+          <div class="card-head">
+            <h3>Your next move</h3>
+          </div>
+          <div id="overview-next"><p class="hint">Start a draft in the Draft Room to see live recommendations here.</p></div>
+        </section>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <h3>Draft cheat sheet</h3>
+          <span class="card-note">tiers by position — a gap between tiers is where value drops off</span>
+        </div>
+        <div id="cheatsheet-content" class="cheatsheet"></div>
+      </section>
     </section>
 
+    <!-- ============================== DRAFT ROOM ================================ -->
     <section id="panel-board" class="panel">
-      <h2>Draft Board</h2>
-      <p id="data-source-banner" class="placeholder-banner">Loading player data…</p>
+      <div class="page-head">
+        <h2>Draft Room</h2>
+        <p class="page-sub">Log every pick as it happens — yours or an opponent's — and the board, recommendations, and roster needs all update together.</p>
+      </div>
 
-      <div id="setup-card" class="card">
-        <h3>Start a Draft</h3>
-        <div class="form-row">
-          <label for="setup-teams">Number of teams</label>
-          <input id="setup-teams" type="number" min="4" max="16" value="10" />
+      <div id="setup-card" class="card setup-card">
+        <div class="card-head"><h3>Start a draft</h3></div>
+        <div class="setup-grid">
+          <div class="field">
+            <label for="setup-teams">Teams</label>
+            <input id="setup-teams" type="number" min="4" max="16" value="10" />
+          </div>
+          <div class="field">
+            <label for="setup-slot">My draft slot</label>
+            <input id="setup-slot" type="number" min="1" max="16" value="1" />
+          </div>
+          <div class="field">
+            <label for="setup-mode">Mode</label>
+            <select id="setup-mode">
+              <option value="practice">Practice (mock opponents)</option>
+              <option value="live">Live draft</option>
+            </select>
+          </div>
+          <div class="field field-actions">
+            <button id="setup-start-btn" class="btn btn-primary" type="button">Start draft</button>
+            <button id="setup-reset-btn" class="btn btn-ghost" type="button">Reset</button>
+          </div>
         </div>
-        <div class="form-row">
-          <label for="setup-slot">My draft slot</label>
-          <input id="setup-slot" type="number" min="1" max="16" value="5" />
-        </div>
-        <div class="form-row">
-          <label for="setup-mode">Mode</label>
-          <select id="setup-mode">
-            <option value="practice">Practice (mock opponents)</option>
-            <option value="live">Live (sync real Yahoo/ESPN draft)</option>
-          </select>
-        </div>
-        <button id="setup-start-btn" class="btn btn-primary" type="button">Start Draft</button>
-        <button id="setup-reset-btn" class="btn btn-ghost" type="button">Reset current draft</button>
+        <p class="hint">Yahoo league: you pick 1st overall. ESPN league: 3rd or 4th — confirm before that draft.</p>
       </div>
 
       <div id="board-content" hidden>
-        <div class="status-ticker">
-          <span id="on-the-clock" class="status status-connected"></span>
-          <button id="simulate-btn" class="btn btn-primary" type="button">Simulate to my turn</button>
-          <button id="live-sync-btn" class="btn btn-primary" type="button" hidden>Sync live picks</button>
-          <button id="board-reset-btn" class="btn btn-ghost" type="button" title="Wipes this draft's picks and starts over — asks for confirmation first">Reset draft</button>
+        <!-- On the clock: the single most important piece of information during a draft,
+             so it gets the full-width treatment rather than a line of small text. -->
+        <div id="clock-bar" class="clock-bar">
+          <div class="clock-main">
+            <span class="clock-label">On the clock</span>
+            <span id="on-the-clock" class="clock-value"></span>
+          </div>
+          <div class="clock-actions">
+            <button id="simulate-btn" class="btn btn-primary" type="button">Simulate to my turn</button>
+            <button id="live-sync-btn" class="btn btn-ghost" type="button" hidden>Sync live picks</button>
+            <button id="board-reset-btn" class="btn btn-ghost" type="button" title="Wipes this draft's picks — asks first">Reset draft</button>
+          </div>
         </div>
 
-        <div class="board-layout">
-          <div class="board-main">
-            <table class="data-table" id="picks-table">
-              <thead><tr><th>Pick</th><th>Round</th><th>Team</th><th>Player</th><th>Pos</th></tr></thead>
-              <tbody></tbody>
-            </table>
+        <section class="card">
+          <div class="card-head">
+            <h3>The board</h3>
+            <span class="card-note">snake order — round by round, every team</span>
           </div>
+          <div class="board-scroll"><div id="draft-board-grid" class="draft-grid"></div></div>
+        </section>
 
-          <aside class="board-sidebar">
-            <div class="card sidebar-rec-card">
-              <h3>Recommendation <span class="tag">live</span></h3>
-              <div class="form-row">
-                <label for="strategy-preset-board">Mode</label>
+        <div class="split-main-rail">
+          <section class="card">
+            <div class="card-head">
+              <h3>Best available</h3>
+              <span class="card-note">under your current strategy</span>
+            </div>
+            <div id="board-best-available"></div>
+          </section>
+
+          <aside class="rail">
+            <section class="card">
+              <div class="card-head"><h3>Recommendation</h3><span class="pill pill-live">live</span></div>
+              <div class="field">
+                <label for="strategy-preset-board">Strategy</label>
                 <select id="strategy-preset-board">
                   <option value="recommended">Recommended</option>
                   <option value="brain">The Brain</option>
                   <option value="custom">Custom</option>
                 </select>
               </div>
-              <div id="board-rec-content"><p class="hint">Start a draft to see live recommendations here.</p></div>
-            </div>
+              <div id="board-rec-content"><p class="hint">Start a draft to see live recommendations.</p></div>
+            </section>
+
+            <section class="card">
+              <div class="card-head"><h3>Roster needs</h3></div>
+              <div id="board-needs"></div>
+            </section>
+
+            <section class="card">
+              <div class="card-head"><h3>Recent picks</h3></div>
+              <table class="data-table compact" id="picks-table">
+                <thead><tr><th>#</th><th>Rd</th><th>Team</th><th>Player</th><th>Pos</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </section>
           </aside>
         </div>
       </div>
     </section>
 
+    <!-- ================================ PLAYERS ================================= -->
     <section id="panel-recommend" class="panel">
-      <h2>Recommendation</h2>
-      <p class="hint">All four tiers are real now, backed by real nflverse data — Projections (VORP + tier-cliff), Efficiency (EPA/yards-per-touch/volume percentile), Contextual (Week 1 2026 schedule/odds), and Risk (injury history). Adjust their relative weight in Settings below — it genuinely changes the ranking now.</p>
+      <div class="page-head">
+        <h2>Players</h2>
+        <p class="page-sub">The full ranked pool. Score blends four tiers — projections, efficiency, context, and risk — weighted in Settings.</p>
+      </div>
 
-      <div class="card" id="strategy-quickpick">
-        <h3>Strategy for this pick</h3>
-        <div class="form-row">
-          <label for="strategy-preset-inline">Mode</label>
-          <select id="strategy-preset-inline">
-            <option value="recommended">Recommended (needs-aware)</option>
-            <option value="brain">The Brain (pure data, ignores needs)</option>
-            <option value="custom">Custom</option>
-          </select>
+      <div class="card strategy-card">
+        <div class="strategy-row">
+          <div class="field">
+            <label for="strategy-preset-inline">Strategy for this pick</label>
+            <select id="strategy-preset-inline">
+              <option value="recommended">Recommended — needs-aware</option>
+              <option value="brain">The Brain — pure data</option>
+              <option value="custom">Custom blend</option>
+            </select>
+          </div>
+          <p class="hint" id="strategy-inline-hint"></p>
         </div>
-        <p class="hint" id="strategy-inline-hint"></p>
       </div>
 
       <div id="preference-layer-content"></div>
+      <div id="recommendation-content"></div>
 
-      <div id="recommendation-content"><p class="hint">Start a draft on the Draft Board tab first.</p></div>
+      <section class="card">
+        <div class="card-head">
+          <h3>Available players</h3>
+          <div class="table-controls">
+            <input id="player-search" class="search-input" type="search" placeholder="Search player…" aria-label="Search players" />
+            <div class="pos-filters" id="pos-filters" role="group" aria-label="Filter by position">
+              <button class="pos-filter is-active" data-pos="ALL" type="button">All</button>
+              <button class="pos-filter" data-pos="QB" type="button">QB</button>
+              <button class="pos-filter" data-pos="RB" type="button">RB</button>
+              <button class="pos-filter" data-pos="WR" type="button">WR</button>
+              <button class="pos-filter" data-pos="TE" type="button">TE</button>
+              <button class="pos-filter" data-pos="K" type="button">K</button>
+              <button class="pos-filter" data-pos="DEF" type="button">DEF</button>
+            </div>
+            <!-- Kept for the existing filter wiring and as an accessible fallback. -->
+            <label class="sr-only" for="position-filter">Filter position</label>
+            <select id="position-filter" class="sr-only">
+              <option value="ALL">All</option>
+              <option value="QB">QB</option>
+              <option value="RB">RB</option>
+              <option value="WR">WR</option>
+              <option value="TE">TE</option>
+              <option value="K">K</option>
+              <option value="DEF">DEF</option>
+            </select>
+          </div>
+        </div>
 
-      <h3>Available Players</h3>
-      <div class="form-row">
-        <label for="position-filter">Filter position</label>
-        <select id="position-filter">
-          <option value="ALL">All</option>
-          <option value="QB">QB</option>
-          <option value="RB">RB</option>
-          <option value="WR">WR</option>
-          <option value="TE">TE</option>
-          <option value="K">K</option>
-          <option value="DEF">DEF</option>
-        </select>
-      </div>
-      <div class="card">
-        <h3>Top scores at this position</h3>
-        <div class="chart-wrap"><canvas id="available-chart" height="90"></canvas></div>
-      </div>
-
-      <table class="data-table" id="available-table">
-        <thead><tr><th>Player</th><th>Pos</th><th>Team</th><th>Tier</th><th>VORP</th><th>Score</th><th></th></tr></thead>
-        <tbody></tbody>
-      </table>
+        <div class="table-scroll">
+          <table class="data-table" id="available-table">
+            <thead>
+              <tr>
+                <th class="col-rank">#</th>
+                <th>Player</th>
+                <th>Pos</th>
+                <th>Team</th>
+                <th>Tier</th>
+                <th class="numeric">VORP</th>
+                <th class="numeric">Score</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
     </section>
 
+    <!-- ================================= LINEUP ================================= -->
     <section id="panel-lineup" class="panel">
-      <h2>Lineup Optimizer</h2>
-      <p class="hint">Start/bench recommendations from the same VORP/tier scoring engine used on Draft — ranked within each roster slot. Honest limitation: the underlying projections are a 2024-actuals-based season model plus Week 1 2026 schedule context only (see the Draft tab's own banner) — this is not yet a true week-by-week matchup optimizer, just the best-available ranking applied to whichever players are on your roster right now.</p>
-      <div id="lineup-content"><p class="hint">No roster yet — draft on the Draft tab, or connect Yahoo/ESPN below, first.</p></div>
+      <div class="page-head">
+        <h2>Lineup</h2>
+        <p class="page-sub">Best player available per slot, scored by the same engine as the draft. This is a ranking, not yet a week-by-week matchup optimizer — the contextual tier only has real 2026 Week 1 data so far.</p>
+      </div>
+      <div id="lineup-content"><p class="hint">No roster yet — draft in the Draft Room, or connect a league on the My Team tab.</p></div>
     </section>
 
+    <!-- ================================ MY TEAM ================================= -->
+    <section id="panel-roster" class="panel">
+      <div class="page-head">
+        <h2>My Team</h2>
+        <p class="page-sub">Read your roster from a live league, or from the draft you're logging here.</p>
+      </div>
+
+      <div class="card">
+        <div class="roster-source-row">
+          <div class="field">
+            <label for="roster-source-select">Roster source</label>
+            <select id="roster-source-select">
+              <option value="local">This draft (local)</option>
+              <option value="yahoo">Yahoo league</option>
+              <option value="espn">ESPN league</option>
+            </select>
+          </div>
+          <button id="roster-refresh-btn" class="btn btn-ghost" type="button">Refresh</button>
+          <p id="roster-source-warning" class="warn-text"></p>
+        </div>
+        <div id="espn-team-picker" hidden>
+          <p class="hint">ESPN's API can't tell which team is yours — pick it once and it's remembered.</p>
+          <div id="espn-team-picker-list" class="chip-row"></div>
+        </div>
+      </div>
+
+      <div id="roster-content"></div>
+    </section>
+
+    <!-- ================================ MARKETS ================================= -->
+    <section id="panel-markets" class="panel">
+      <div class="page-head">
+        <h2>Markets</h2>
+        <p class="page-sub">Live NFL prediction-market prices from Kalshi's public data, read-only.</p>
+      </div>
+
+      <div class="notice">
+        <strong>What this is, plainly.</strong> These are real-money market prices, shown as implied probability
+        (a 62¢ contract means the market prices that outcome at 62%). They are a labeled signal for your own
+        judgment — they do not feed the fantasy scoring engine, they are not picks or wagering advice, and this
+        app never places trades.
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>NFL markets</h3>
+          <div class="table-controls">
+            <span id="markets-status" class="card-note"></span>
+            <button id="markets-refresh-btn" class="btn btn-ghost btn-sm" type="button">Refresh</button>
+          </div>
+        </div>
+        <div id="markets-content"><p class="hint">Loading market data…</p></div>
+      </div>
+    </section>
+
+    <!-- ============================ TRADES / FREE AGENTS ======================== -->
     <section id="panel-trades" class="panel">
-      <h2>Trade Optimizer</h2>
-      <p class="placeholder-banner">⚠ Not built yet — queued Phase 2. Will evaluate trade offers against your actual roster needs and the same VORP/tier scoring used on the Draft and Recommendation tabs, so a trade suggestion here is judged by the same brain that drafted your team.</p>
+      <div class="page-head">
+        <h2>Trades</h2>
+        <p class="page-sub">In-season trade analysis, built on the same roster state and scoring engine as the draft.</p>
+      </div>
+      <div class="card queued-card">
+        <span class="queued-badge">Queued for the season</span>
+        <p>The trade analyzer is designed but not built yet, and it is honestly labeled rather than faked. It needs a live league connection to know the other manager's roster, so it is sequenced after the draft — which is what matters this week.</p>
+        <p class="hint">When it lands it will read your real roster and needs from the same state the draft builds, not a separate mini-app.</p>
+      </div>
     </section>
 
     <section id="panel-freeagents" class="panel">
-      <h2>Free Agent / Waiver Optimizer</h2>
-      <p class="placeholder-banner">⚠ Not built yet — queued Phase 2. Will surface available free agents ranked by the same scoring engine plus each league's real waiver/FA transaction rules, so you know exactly when a pickup or drop becomes possible — not just that a player is available. See docs/CONTEXT.md "Phase 2 requirement, precisely stated."</p>
-    </section>
-
-    <section id="panel-markets" class="panel">
-      <h2>Markets (Kalshi)</h2>
-      <p class="placeholder-banner">⚠ Not built yet — queued. Real-money market-implied probabilities from Kalshi's public API, shown as a clearly labeled informational badge next to players/teams across every tab (Draft, Lineup, Trades, Free Agents) — never a disguised "pick." A separate combos/parlay builder lives here, kept apart from the fantasy roster engine. See docs/CONTEXT.md "Kalshi badge."</p>
-    </section>
-
-    <section id="panel-roster" class="panel">
-      <h2>My Roster</h2>
-      <div class="card" id="roster-source-card">
-        <h3>Roster source</h3>
-        <p class="hint">This choice also drives the Lineup tab. Yahoo/ESPN require that league to be connected — falls back to your local draft log automatically if a live fetch fails.</p>
-        <div class="form-row">
-          <label for="roster-source-select">Source</label>
-          <select id="roster-source-select">
-            <option value="local">Local draft log (this app's practice/live draft tracking)</option>
-            <option value="yahoo">Yahoo (live)</option>
-            <option value="espn">ESPN (live)</option>
-          </select>
-          <button id="roster-refresh-btn" class="btn btn-ghost" type="button">Refresh</button>
-        </div>
-        <div id="espn-team-picker" hidden>
-          <p class="hint">Pick which ESPN team is yours (ESPN's API can't detect this automatically):</p>
-          <div id="espn-team-picker-list"></div>
-        </div>
-        <p class="hint" id="roster-source-warning"></p>
+      <div class="page-head">
+        <h2>Free Agents</h2>
+        <p class="page-sub">Waiver and free-agent targets, with each league's real transaction timing.</p>
       </div>
-      <div id="roster-content"><p class="hint">Start a draft on the Draft Board tab first.</p></div>
+      <div class="card queued-card">
+        <span class="queued-badge">Queued for the season</span>
+        <p>This needs each league's actual waiver rules — waiver period, processing day and time, FAAB versus priority — pulled from Yahoo and ESPN, because the whole point is telling you exactly when a pickup becomes possible, not just that someone is available. That can't be stubbed without lying to you.</p>
+      </div>
     </section>
 
-    <section id="panel-settings" class="panel">
-      <h2>Settings</h2>
+    <!-- ================================ CONNECT ================================= -->
+    <section id="panel-connect" class="panel">
+      <div class="page-head">
+        <h2>Connections</h2>
+        <p class="page-sub">Both leagues need the assistant this season.</p>
+      </div>
 
-      <div class="card">
-        <h3>Strategy</h3>
-        <p class="hint">This setting is shared across the whole app — Draft, Lineup, Trades, and Free Agents will all read from it once built, not just this tab.</p>
-        <div class="form-row">
+      <div class="split-2">
+        <article class="card conn-card">
+          <div class="card-head">
+            <h3>Yahoo</h3>
+            <span class="pill">League 865803</span>
+          </div>
+          <p id="yahoo-status" class="status status-pending">Not connected</p>
+          <p class="hint">Snake draft, PPR. You pick 1st overall.</p>
+          <button id="yahoo-connect-btn" class="btn btn-primary" type="button">Connect Yahoo</button>
+        </article>
+
+        <article class="card conn-card">
+          <div class="card-head">
+            <h3>ESPN</h3>
+            <span class="pill">League 647918841</span>
+          </div>
+          <p id="espn-status" class="status status-pending">Checking…</p>
+          <p class="hint">Redraft, PPR. Draft slot 3rd or 4th — confirm before the draft.</p>
+          <button id="espn-check-btn" class="btn btn-primary" type="button">Test ESPN connection</button>
+        </article>
+      </div>
+
+      <section class="card">
+        <div class="card-head"><h3>Debug output</h3><span class="card-note">raw responses and errors, so nothing fails silently</span></div>
+        <pre id="debug-output" class="debug-output" hidden></pre>
+      </section>
+    </section>
+
+    <!-- ================================ SETTINGS ================================ -->
+    <section id="panel-settings" class="panel">
+      <div class="page-head">
+        <h2>Settings</h2>
+        <p class="page-sub">These apply everywhere — draft, lineup, and every recommendation.</p>
+      </div>
+
+      <section class="card">
+        <div class="card-head"><h3>Strategy</h3></div>
+        <div class="field">
           <label for="strategy-preset">Mode</label>
           <select id="strategy-preset">
             <option value="recommended">Recommended — needs-aware, our default</option>
-            <option value="brain">The Brain — pure data, ignores roster needs entirely</option>
-            <option value="custom">Custom — set your own needs-awareness below</option>
+            <option value="brain">The Brain — pure data, ignores needs</option>
+            <option value="custom">Custom blend</option>
           </select>
         </div>
-        <div class="slider-row">
-          <label for="need-awareness">Needs-awareness (Custom only)</label>
+        <div class="field">
+          <label for="need-awareness">Needs-awareness <span class="card-note">(Custom only)</span></label>
           <input id="need-awareness" type="range" min="0" max="100" value="100" />
         </div>
-        <p class="hint">"Recommended" always ranks an open roster need above pure score. "The Brain" ranks purely by score (VORP/tier) and will happily recommend the highest-value player at a position you don't need — that's not a bug, it's the most-points-no-matter-what mode. "Custom" blends the two by the slider above (0 = pure Brain, 100 = full Recommended).</p>
-      </div>
+        <p class="hint">Recommended always ranks an open roster need above pure score. The Brain ranks purely by score and will happily take the highest-value player at a position you don't need — that's the most-points-no-matter-what mode you asked for. Custom blends the two.</p>
+      </section>
 
-      <div class="card" id="preferences-card">
-        <h3>Your player preferences</h3>
-        <p class="hint">Feeds the Recommendation tab's preference layer — it always shows the model's real #1 pick, shows your stated preference if one is still available, and shows the honest cost (or lack of one) of taking it instead. Stating a preference here never changes the model's own number for anyone else; it only surfaces the comparison. Matches by exact player name, so spelling matters.</p>
-        <div class="form-row">
-          <label for="pref-player-name">Player name</label>
-          <input id="pref-player-name" type="text" placeholder="e.g. Lamar Jackson" />
+      <section class="card">
+        <div class="card-head"><h3>Your player preferences</h3></div>
+        <p class="hint">The Players tab always shows the model's real #1, your stated preference if it's still on the board, and the honest gap between them. Stating a preference never quietly changes the model's number.</p>
+        <div class="pref-form">
+          <div class="field">
+            <label for="pref-player-name">Player name</label>
+            <input id="pref-player-name" type="text" placeholder="e.g. Lamar Jackson" />
+          </div>
+          <div class="field">
+            <label for="pref-note">Why (optional)</label>
+            <input id="pref-note" type="text" placeholder="e.g. building the roster around him again" />
+          </div>
+          <button id="pref-add-btn" class="btn btn-primary" type="button">Add preference</button>
         </div>
-        <div class="form-row">
-          <label for="pref-note">Why (optional)</label>
-          <input id="pref-note" type="text" placeholder="e.g. Building the roster around him again this year" />
-        </div>
-        <button id="pref-add-btn" class="btn btn-primary" type="button">Add preference</button>
-        <div id="preferences-list" style="margin-top:12px"></div>
-      </div>
+        <div id="preferences-list"></div>
+      </section>
 
-      <div class="card">
-        <h3>Scoring tier weights</h3>
-        <div class="slider-row">
-          <label for="weight-projections">Projections weight</label>
-          <input id="weight-projections" type="range" min="0" max="100" value="40" />
+      <section class="card">
+        <div class="card-head"><h3>Scoring tier weights</h3></div>
+        <div class="weights-grid">
+          <div class="field"><label for="weight-projections">Projections</label><input id="weight-projections" type="range" min="0" max="100" /></div>
+          <div class="field"><label for="weight-efficiency">Efficiency</label><input id="weight-efficiency" type="range" min="0" max="100" /></div>
+          <div class="field"><label for="weight-contextual">Contextual</label><input id="weight-contextual" type="range" min="0" max="100" /></div>
+          <div class="field"><label for="weight-risk">Risk</label><input id="weight-risk" type="range" min="0" max="100" /></div>
         </div>
-        <div class="slider-row">
-          <label for="weight-efficiency">Efficiency weight</label>
-          <input id="weight-efficiency" type="range" min="0" max="100" value="30" />
-        </div>
-        <div class="slider-row">
-          <label for="weight-contextual">Contextual weight</label>
-          <input id="weight-contextual" type="range" min="0" max="100" value="20" />
-        </div>
-        <div class="slider-row">
-          <label for="weight-risk">Risk weight</label>
-          <input id="weight-risk" type="range" min="0" max="100" value="10" />
-        </div>
-        <p class="hint">All four tiers are real and combined into each player's Score (0-100) by these weights — turning Risk all the way up and everything else down, for example, ranks purely by health/durability. Contextual is currently Week 1 2026 schedule/odds only (not yet full-season weather/coaching/matchup intelligence — see <code>docs/CONTEXT.md</code>). Sliders persist to storage automatically.</p>
-      </div>
+        <p class="hint">All four tiers are real and combine into each player's 0–100 score by these weights. Turn Risk all the way up and everything else down, for example, and you rank purely by health and durability. Contextual is currently 2026 Week 1 schedule and odds only.</p>
+      </section>
     </section>
   </main>
 

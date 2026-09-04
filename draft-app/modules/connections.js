@@ -8,8 +8,24 @@ import { LEAGUES } from "../../shared/data-sources.js";
 import { YAHOO_CLIENT_ID } from "../../shared/config.js";
 import { safe, withBusy, logDebug, showErrorBanner } from "./dom-utils.js";
 
+/** Connection state shows in two places: the full status line on the Connect tab, and
+ * a small dot in the app bar's league switcher that's visible from every tab — so you
+ * never have to leave the draft to find out whether a league is still connected. */
+function setConnDot(id, cls) {
+  const dot = document.getElementById(id);
+  if (!dot) return;
+  dot.className = `conn-dot ${cls}`;
+}
+
+function statusToDotClass(cls) {
+  if (cls === "status-connected") return "is-ok";
+  if (cls === "status-error") return "is-bad";
+  return "is-pending";
+}
+
 function setYahooStatus(text, cls) {
   const el = document.getElementById("yahoo-status");
+  setConnDot("dot-yahoo", statusToDotClass(cls));
   if (!el) return;
   el.textContent = text;
   el.className = `status ${cls}`;
@@ -99,6 +115,7 @@ async function initYahoo() {
 
 function setEspnStatus(text, cls) {
   const el = document.getElementById("espn-status");
+  setConnDot("dot-espn", statusToDotClass(cls));
   if (!el) return;
   el.textContent = text;
   el.className = `status ${cls}`;

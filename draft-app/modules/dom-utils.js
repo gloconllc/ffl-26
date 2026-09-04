@@ -101,6 +101,25 @@ export function injuryBadgeHtml(player) {
   return `<span class="injury-badge ${cls}" title="${escapeHtml(player.injuryNote || "")}">${escapeHtml(player.injuryStatus)}</span>`;
 }
 
+export function tierChipHtml(tier) {
+  if (tier == null) return `<span class="tier-chip t5">—</span>`;
+  const t = Math.max(1, Math.min(5, Number(tier) || 5));
+  return `<span class="tier-chip t${t}">T${escapeHtml(tier)}</span>`;
+}
+
+/** Small "K" market badge: implied probability from a real Kalshi contract, with a
+ * trend arrow when we have a previous snapshot to compare against. Clearly a market
+ * signal, never a pick — the title text says so explicitly on hover. */
+export function marketBadgeHtml(market, trend) {
+  if (!market || market.impliedProbability == null) return "";
+  const pct = Math.round(market.impliedProbability);
+  const arrow =
+    trend == null ? "" : trend > 0 ? `<span class="k-up">▲</span>` : `<span class="k-down">▼</span>`;
+  const trendText = trend == null ? "" : ` (${trend > 0 ? "+" : ""}${Math.round(trend)} pts since your last visit)`;
+  const title = `Kalshi market: ${market.title} — ${pct}% implied probability${trendText}. Market data only, not a pick or a wager recommendation.`;
+  return `<span class="k-badge" title="${escapeHtml(title)}"><span class="k-mark">K</span>${pct}%${arrow}</span>`;
+}
+
 // --- Tier-breakdown visualization (no chart library needed for this one — four
 // small percentage bars, color-coded, one per scoring tier) --------------------------
 const TIER_LABELS = { projections: "Proj", efficiency: "Eff", contextual: "Ctx", risk: "Risk" };
